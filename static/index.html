@@ -9,15 +9,15 @@
 <style>
   :root {
     --bg:        #020502;
-    --panel:     #060d06;
-    --border:    #0f2214;
+    --panel:     #0a1a0a;
+    --border:    #1a4620;
     --green:     #00ff5a;
     --green-dim: #1a6635;
     --amber:     #ffb020;
     --cyan:      #00f0ff;
     --red:       #ff3030;
     --text:      #d0ffd8;
-    --text-dim:  #4a8a5a;
+    --text-dim:  #66d966;
     --glow:      0 0 16px rgba(0,255,90,0.6);
     --glow-sm:   0 0 8px rgba(0,255,90,0.45);
   }
@@ -74,21 +74,30 @@
   .logo {
     font-family: 'Orbitron', monospace;
     font-weight: 900;
-    font-size: 1.1rem;
+    font-size: 1.3rem;
     letter-spacing: 0.25em;
     color: var(--green);
     text-shadow: var(--glow);
   }
 
-  .logo span { color: var(--text-dim); font-weight: 400; font-size: 0.75rem; display: block; letter-spacing: 0.1em; margin-top: 2px; }
+  .logo span {
+    color: var(--cyan);
+    font-weight: 900;
+    font-size: 1rem;
+    display: block;
+    letter-spacing: 0.1em;
+    margin-top: 3px;
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.8);
+  }
 
   .status {
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 0.72rem;
+    font-size: 0.9rem;
     color: var(--text-dim);
     letter-spacing: 0.08em;
+    font-weight: 700;
   }
 
   .dot {
@@ -111,10 +120,25 @@
     letter-spacing: 0.12em;
   }
 
+  .header-info {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .header-item {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--cyan);
+    letter-spacing: 0.1em;
+    text-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
+  }
+
   main {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    grid-template-rows: 1fr;
+    grid-template-rows: 1fr auto;
     gap: 1px;
     padding: 1px;
     background: var(--border);
@@ -130,7 +154,23 @@
     position: relative;
     overflow: hidden;
     min-height: 0;
+  }
+
+  .panel-cpu {
+    background: #3d1515;
     max-height: 400px;
+  }
+
+  .panel-mem, .panel-net {
+    background: #0f2710;
+    max-height: 400px;
+  }
+
+  .panel-docker {
+    background: var(--panel);
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 12px 12px 8px !important;
   }
 
   .panel::before {
@@ -149,17 +189,26 @@
 
   .panel-title {
     font-family: 'Orbitron', monospace;
-    font-size: 0.65rem;
-    font-weight: 700;
+    font-size: 0.9rem;
+    font-weight: 900;
     letter-spacing: 0.3em;
     color: var(--text-dim);
     text-transform: uppercase;
+    text-shadow: 0 0 8px rgba(102, 217, 102, 0.5);
+    margin-bottom: 4px;
+  }
+
+  .panel-docker .panel-title {
+    font-size: 1.1rem;
+    color: var(--green);
+    text-shadow: 0 0 12px rgba(0, 255, 90, 0.7);
   }
 
   .panel-tag {
-    font-size: 0.6rem;
-    color: var(--border);
+    font-size: 0.8rem;
+    color: var(--text-dim);
     letter-spacing: 0.15em;
+    font-weight: 700;
   }
 
   .big-value {
@@ -193,9 +242,10 @@
   .gauge-label {
     display: flex;
     justify-content: space-between;
-    font-size: 0.65rem;
+    font-size: 0.8rem;
     color: var(--text-dim);
     letter-spacing: 0.08em;
+    font-weight: 700;
   }
 
   .gauge-track {
@@ -245,9 +295,10 @@
   }
 
   .core-label {
-    font-size: 0.58rem;
+    font-size: 0.75rem;
     color: var(--text-dim);
     letter-spacing: 0.1em;
+    font-weight: 700;
   }
 
   .core-bar-track {
@@ -265,10 +316,11 @@
   }
 
   .core-val {
-    font-size: 0.62rem;
-    color: var(--green);
+    font-size: 0.8rem;
+    color: var(--text-dim);
     text-align: right;
     transition: color 0.4s;
+    font-weight: 700;
   }
 
   /* Network specific */
@@ -296,9 +348,10 @@
   .net-val.up-val { color: var(--amber); text-shadow: 0 0 10px rgba(245,166,35,0.4); }
 
   .net-unit {
-    font-size: 0.7rem;
+    font-size: 0.85rem;
     color: var(--text-dim);
     margin-left: 3px;
+    font-weight: 700;
   }
 
   .mem-detail {
@@ -309,20 +362,120 @@
   }
 
   .mem-item { display: flex; flex-direction: column; gap: 2px; }
-  .mem-item-label { font-size: 0.6rem; color: var(--text-dim); letter-spacing: 0.1em; }
+  .mem-item-label { font-size: 0.8rem; color: var(--text-dim); letter-spacing: 0.1em; font-weight: 700; }
   .mem-item-val { font-size: 0.85rem; color: var(--text); }
 
   /* Panel grid placement */
-  .panel-cpu    { grid-column: 1 / 2; }
-  .panel-mem    { grid-column: 2 / 3; }
-  .panel-net    { grid-column: 3 / 4; }
+  .panel-cpu    { grid-column: 1 / 2; grid-row: 1; }
+  .panel-mem    { grid-column: 2 / 3; grid-row: 1; }
+  .panel-net    { grid-column: 3 / 4; grid-row: 1; }
+  .panel-docker { grid-column: 1 / 4; grid-row: 2; }
+
+  /* Docker table styles */
+  .docker-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+    margin-top: 6px;
+  }
+
+  .docker-table thead {
+    border-bottom: 3px solid var(--green);
+    background: rgba(0, 255, 90, 0.15);
+  }
+
+  .docker-table th {
+    text-align: left;
+    padding: 10px 12px 8px;
+    color: var(--green);
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    text-shadow: 0 0 12px rgba(0, 255, 90, 0.6);
+    font-size: 1rem;
+  }
+
+  .docker-table tbody tr {
+    border-bottom: 2px solid var(--green-dim);
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .docker-table tbody tr:nth-child(odd) {
+    background: rgba(0, 255, 90, 0.08);
+  }
+
+  .docker-table tbody tr:hover {
+    background: rgba(0, 255, 90, 0.15);
+  }
+
+  .docker-table td {
+    padding: 8px 12px;
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .docker-table td:first-child {
+    color: #88ff88;
+    font-size: 0.95rem;
+    font-weight: 600;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-shadow: 0 0 4px rgba(136, 255, 136, 0.4);
+  }
+
+  .docker-table th {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .docker-table th:hover {
+    background: rgba(0, 255, 90, 0.25);
+  }
+
+  .docker-table th.sort-asc::after {
+    content: ' ▲';
+  }
+
+  .docker-table th.sort-desc::after {
+    content: ' ▼';
+  }
+
+  .docker-table td.warn {
+    color: #ffff00;
+    font-weight: 900;
+    font-size: 1.1rem;
+    text-shadow: 0 0 10px rgba(255, 255, 0, 0.8);
+  }
+
+  .docker-table td.crit {
+    color: #ff3030;
+    font-weight: 900;
+    font-size: 1.1rem;
+    text-shadow: 0 0 12px rgba(255, 48, 48, 0.8);
+  }
 
   .offline { opacity: 0.3; filter: grayscale(1); }
 
+  @media (max-width: 1200px) {
+    main { grid-template-columns: 1fr 1fr; height: auto; grid-template-rows: 1fr auto; }
+    .panel-cpu { grid-column: 1; grid-row: 1; }
+    .panel-mem { grid-column: 2; grid-row: 1; }
+    .panel-net { grid-column: 1 / 3; grid-row: 2; }
+    .panel-docker { grid-column: 1 / 3; grid-row: 3; }
+    .big-value { font-size: 2.4rem; }
+  }
+
   @media (max-width: 900px) {
-    main { grid-template-columns: 1fr; height: auto; }
-    .panel-cpu, .panel-mem, .panel-net { grid-column: 1; }
-    .big-value { font-size: 2.8rem; }
+    main { grid-template-columns: 1fr; }
+    .panel-cpu { grid-column: 1; grid-row: 1; }
+    .panel-mem { grid-column: 1; grid-row: 2; }
+    .panel-net { grid-column: 1; grid-row: 3; }
+    .panel-docker { grid-column: 1; grid-row: 4; }
+    .big-value { font-size: 2rem; }
   }
 </style>
 </head>
@@ -332,6 +485,10 @@
   <div class="logo">
     MACHINE MONITOR
     <span id="hostname">SYSTEM TELEMETRY / LIVE</span>
+  </div>
+  <div class="header-info">
+    <div class="header-item" id="uptime">UPTIME: --</div>
+    <div class="header-item" id="datetime">--:--:-- -- -- ----</div>
   </div>
   <div class="status">
     <div class="dot" id="dot"></div>
@@ -443,6 +600,22 @@
     </div>
   </div>
 
+  <!-- Docker -->
+  <div class="panel panel-docker">
+    <div class="panel-title">DOCKER TOP 25</div>
+    <table class="docker-table">
+      <thead>
+        <tr>
+          <th>CONTAINER</th>
+          <th id="docker-cpu-header">CPU</th>
+          <th id="docker-mem-header">MEM</th>
+        </tr>
+      </thead>
+      <tbody id="docker-tbody">
+      </tbody>
+    </table>
+  </div>
+
 </main>
 
 <script>
@@ -461,15 +634,39 @@ const memHistory  = Array(HISTORY).fill(0);
 const netRxHist   = Array(HISTORY).fill(0);
 const netTxHist   = Array(HISTORY).fill(0);
 let coresInitialized = false;
+let dockerContainers = [];
+let dockerSortKey = 'cpu_percent';
+let dockerSortAsc = false;
 
-// ─── Clock ────────────────────────────────────────────────────────────────────
-function updateClock() {
+// ─── Clock & Uptime ───────────────────────────────────────────────────────────
+let bootTime = null;
+
+function formatUptime(seconds) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${days}d ${hours}h ${mins}m ${secs}s`;
+}
+
+function updateClockAndUptime() {
   const now = new Date();
   document.getElementById('clock').textContent =
     now.toLocaleTimeString('de-DE', { hour12: false });
+
+  // Update date/time display
+  const dateStr = now.toLocaleDateString('de-DE', { weekday: 'short', month: 'short', day: '2-digit', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('de-DE', { hour12: false });
+  document.getElementById('datetime').textContent = `${timeStr} | ${dateStr}`;
+
+  // Update uptime if we have boot time
+  if (bootTime) {
+    const uptime = Math.floor((Date.now() - bootTime) / 1000);
+    document.getElementById('uptime').textContent = `UPTIME: ${formatUptime(uptime)}`;
+  }
 }
-updateClock();
-setInterval(updateClock, 1000);
+updateClockAndUptime();
+setInterval(updateClockAndUptime, 1000);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmt(bytes) {
@@ -747,6 +944,72 @@ function updateCores(cores) {
   });
 }
 
+// ─── Docker Table Sorting ─────────────────────────────────────────────────────
+function renderDockerTable() {
+  const tbody = document.getElementById('docker-tbody');
+  let sorted = [...dockerContainers];
+
+  sorted.sort((a, b) => {
+    let aVal = a[dockerSortKey];
+    let bVal = b[dockerSortKey];
+
+    // Handle string comparisons
+    if (typeof aVal === 'string') {
+      aVal = aVal.toLowerCase();
+      bVal = bVal.toLowerCase();
+      return dockerSortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    }
+
+    // Handle numeric comparisons
+    return dockerSortAsc ? aVal - bVal : bVal - aVal;
+  });
+
+  tbody.innerHTML = sorted.map(c => {
+    const cpuClass = c.cpu_percent >= 90 ? 'crit' : c.cpu_percent >= 70 ? 'warn' : '';
+    return `<tr>
+      <td>${c.name}</td>
+      <td class="${cpuClass}">${c.cpu_percent.toFixed(1)}%</td>
+      <td>${c.mem_usage}</td>
+    </tr>`;
+  }).join('');
+}
+
+function initDockerTableHeaders() {
+  document.getElementById('docker-cpu-header').addEventListener('click', () => {
+    if (dockerSortKey === 'cpu_percent') {
+      dockerSortAsc = !dockerSortAsc;
+    } else {
+      dockerSortKey = 'cpu_percent';
+      dockerSortAsc = false;
+    }
+    updateDockerHeaderIndicators();
+    renderDockerTable();
+  });
+
+  document.getElementById('docker-mem-header').addEventListener('click', () => {
+    if (dockerSortKey === 'mem_percent') {
+      dockerSortAsc = !dockerSortAsc;
+    } else {
+      dockerSortKey = 'mem_percent';
+      dockerSortAsc = false;
+    }
+    updateDockerHeaderIndicators();
+    renderDockerTable();
+  });
+}
+
+function updateDockerHeaderIndicators() {
+  document.querySelectorAll('.docker-table th').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+  });
+
+  if (dockerSortKey === 'cpu_percent') {
+    document.getElementById('docker-cpu-header').classList.add(dockerSortAsc ? 'sort-asc' : 'sort-desc');
+  } else if (dockerSortKey === 'mem_percent') {
+    document.getElementById('docker-mem-header').classList.add(dockerSortAsc ? 'sort-asc' : 'sort-desc');
+  }
+}
+
 // ─── SSE ─────────────────────────────────────────────────────────────────────
 function connect() {
   const dot  = document.getElementById('dot');
@@ -756,10 +1019,16 @@ function connect() {
   es.onopen = () => {
     dot.style.background = 'var(--green)';
     stat.textContent = 'LIVE';
+    initDockerTableHeaders();
   };
 
   es.onmessage = (e) => {
     const d = JSON.parse(e.data);
+
+    // Set boot time once
+    if (d.boot_time && !bootTime) {
+      bootTime = d.boot_time;
+    }
 
     // Hostname
     if (d.hostname) document.getElementById('hostname').textContent = d.hostname;
@@ -810,6 +1079,12 @@ function connect() {
     document.getElementById('net-tx-total').textContent = fmtBytes(d.network.sent_total);
     netRxHist.push(d.network.recv_rate); netRxHist.shift();
     netTxHist.push(d.network.sent_rate); netTxHist.shift();
+
+    // Docker containers
+    dockerContainers = d.docker || [];
+    if (dockerContainers.length > 0) {
+      renderDockerTable();
+    }
 
     // Draw charts
     chartCPU.draw();

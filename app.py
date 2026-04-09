@@ -2,7 +2,9 @@ import asyncio
 import json
 import os
 import platform
+import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 # Point psutil to host procfs/sysfs when running in Docker
 if os.environ.get("ENV_HOST_PROC"):
@@ -59,9 +61,52 @@ def get_temperatures():
 
 _prev_net = psutil.net_io_counters()
 _prev_net_time = time.monotonic()
+_executor = ThreadPoolExecutor(max_workers=1)
 
 
-def get_metrics():
+def _get_docker_stats_sync():
+    """Get top 5 Docker containers by CPU usage (synchronous)."""
+    try:
+        result = subprocess.run(
+            ['docker', 'stats', '--no-stream', '--format', '{{json .}}'],
+            capture_output=True,
+            text=True,
+            timeout=5.0
+        )
+        if result.returncode != 0:
+            return []
+
+        containers = []
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+                cpu_str = data.get('CPUPerc', '0%').rstrip('%')
+                mem_str = data.get('MemPerc', '0%').rstrip('%')
+                containers.append({
+                    'name': data.get('Name', '')[:20],
+                    'cpu_percent': float(cpu_str),
+                    'mem_usage': data.get('MemUsage', '0B'),
+                    'mem_percent': float(mem_str),
+                })
+            except (json.JSONDecodeError, ValueError, KeyError):
+                continue
+
+        # Sort by CPU percent descending, take top 25
+        containers.sort(key=lambda x: x['cpu_percent'], reverse=True)
+        return containers[:25]
+    except Exception:
+        return []
+
+
+async def get_docker_stats():
+    """Get top 5 Docker containers by CPU usage (async wrapper)."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(_executor, _get_docker_stats_sync)
+
+
+async def get_metrics():
     global _prev_net, _prev_net_time
 
     cpu_per_core = psutil.cpu_percent(interval=None, percpu=True)
@@ -80,9 +125,12 @@ def get_metrics():
     _prev_net = cur_net
     _prev_net_time = now
 
+    docker_stats = await get_docker_stats()
+
     return {
         "hostname": platform.node(),
         "ts": int(time.time() * 1000),
+        "boot_time": int(psutil.boot_time() * 1000),
         "cpu": {
             "percent": cpu,
             "cores": cpu_per_core,
@@ -105,6 +153,7 @@ def get_metrics():
             "sent_total": cur_net.bytes_sent,
             "recv_total": cur_net.bytes_recv,
         },
+        "docker": docker_stats,
     }
 
 
@@ -113,8 +162,8 @@ async def metrics_generator():
     psutil.cpu_percent(interval=None, percpu=True)
     await asyncio.sleep(0.5)
     while True:
-        yield {"data": json.dumps(get_metrics())}
-        await asyncio.sleep(1)
+        yield {"data": json.dumps(await get_metrics())}
+        await asyncio.sleep(0.25)
 
 
 @app.get("/stream")
@@ -124,7 +173,7 @@ async def stream():
 
 @app.get("/metrics")
 async def metrics():
-    return get_metrics()
+    return await get_metrics()
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

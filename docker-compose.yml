@@ -2,7 +2,7 @@ services:
   machinemonitor:
     build: .
     ports:
-      - "8000:8000"
+      - "7777:8000"
     pid: host
     volumes:
       - /proc:/host/proc:ro
