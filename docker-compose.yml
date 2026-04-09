@@ -1,0 +1,14 @@
+services:
+  machinemonitor:
+    build: .
+    ports:
+      - "8000:8000"
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+    environment:
+      - ENV_HOST_PROC=/host/proc
+      - ENV_HOST_SYS=/host/sys
+    restart: unless-stopped

@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MACHINE MONITOR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:        #020502;
+    --panel:     #060d06;
+    --border:    #0f2214;
+    --green:     #00ff5a;
+    --green-dim: #1a6635;
+    --amber:     #ffb020;
+    --cyan:      #00f0ff;
+    --red:       #ff3030;
+    --text:      #d0ffd8;
+    --text-dim:  #4a8a5a;
+    --glow:      0 0 16px rgba(0,255,90,0.6);
+    --glow-sm:   0 0 8px rgba(0,255,90,0.45);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 2px,
+      rgba(0,0,0,0.18) 2px,
+      rgba(0,0,0,0.18) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* CRT vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center,
+      transparent 55%,
+      rgba(0,0,0,0.65) 100%
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px 6px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+
+  .logo {
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    font-size: 1.1rem;
+    letter-spacing: 0.25em;
+    color: var(--green);
+    text-shadow: var(--glow);
+  }
+
+  .logo span { color: var(--text-dim); font-weight: 400; font-size: 0.75rem; display: block; letter-spacing: 0.1em; margin-top: 2px; }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+  }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: var(--glow-sm);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .clock {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    letter-spacing: 0.12em;
+  }
+
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 1fr;
+    gap: 1px;
+    padding: 1px;
+    background: var(--border);
+    height: calc(100vh - 38px);
+  }
+
+  .panel {
+    background: var(--panel);
+    padding: 10px 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+    max-height: 400px;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--green-dim), transparent);
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .panel-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  .panel-tag {
+    font-size: 0.6rem;
+    color: var(--border);
+    letter-spacing: 0.15em;
+  }
+
+  .big-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 2.4rem;
+    font-weight: 900;
+    line-height: 1;
+    color: var(--green);
+    text-shadow: var(--glow);
+    letter-spacing: -0.02em;
+    transition: color 0.4s;
+  }
+
+  .big-value .unit {
+    font-size: 1.2rem;
+    font-weight: 400;
+    color: var(--text-dim);
+    margin-left: 4px;
+  }
+
+  .big-value.warn { color: var(--amber); text-shadow: 0 0 12px rgba(245,166,35,0.5); }
+  .big-value.crit { color: var(--red);   text-shadow: 0 0 12px rgba(255,69,69,0.5); }
+
+  /* Bar gauge */
+  .gauge-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .gauge-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+  }
+
+  .gauge-track {
+    height: 6px;
+    background: var(--border);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .gauge-fill {
+    height: 100%;
+    background: var(--green);
+    box-shadow: var(--glow-sm);
+    border-radius: 1px;
+    transition: width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                background 0.4s;
+    width: 0%;
+  }
+
+  .gauge-fill.warn { background: var(--amber); box-shadow: 0 0 6px rgba(245,166,35,0.3); }
+  .gauge-fill.crit { background: var(--red);   box-shadow: 0 0 6px rgba(255,69,69,0.3); }
+
+  /* Canvas chart */
+  .chart-wrap {
+    flex: 1;
+    min-height: 50px;
+    position: relative;
+  }
+
+  canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
+
+  /* CPU cores grid */
+  .cores-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+
+  .core-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .core-label {
+    font-size: 0.58rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .core-bar-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .core-bar {
+    height: 100%;
+    background: var(--green);
+    border-radius: 1px;
+    transition: width 0.8s ease, background 0.4s;
+  }
+
+  .core-val {
+    font-size: 0.62rem;
+    color: var(--green);
+    text-align: right;
+    transition: color 0.4s;
+  }
+
+  /* Network specific */
+  .net-row {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+  }
+
+  .net-arrow {
+    font-size: 0.9rem;
+  }
+
+  .net-arrow.up { color: var(--amber); }
+  .net-arrow.down { color: var(--cyan); }
+
+  .net-val {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 10px rgba(0,229,255,0.4);
+  }
+
+  .net-val.up-val { color: var(--amber); text-shadow: 0 0 10px rgba(245,166,35,0.4); }
+
+  .net-unit {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-left: 3px;
+  }
+
+  .mem-detail {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 10px;
+    margin-top: 2px;
+  }
+
+  .mem-item { display: flex; flex-direction: column; gap: 2px; }
+  .mem-item-label { font-size: 0.6rem; color: var(--text-dim); letter-spacing: 0.1em; }
+  .mem-item-val { font-size: 0.85rem; color: var(--text); }
+
+  /* Panel grid placement */
+  .panel-cpu    { grid-column: 1 / 2; }
+  .panel-mem    { grid-column: 2 / 3; }
+  .panel-net    { grid-column: 3 / 4; }
+
+  .offline { opacity: 0.3; filter: grayscale(1); }
+
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    .panel-cpu, .panel-mem, .panel-net { grid-column: 1; }
+    .big-value { font-size: 2.8rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    MACHINE MONITOR
+    <span id="hostname">SYSTEM TELEMETRY / LIVE</span>
+  </div>
+  <div class="status">
+    <div class="dot" id="dot"></div>
+    <span id="status-text">CONNECTING...</span>
+  </div>
+  <div class="clock" id="clock">--:--:--</div>
+</header>
+
+<main>
+  <!-- CPU + Cores + History -->
+  <div class="panel panel-cpu">
+    <div class="panel-header">
+      <div class="panel-title">CPU</div>
+      <div class="panel-tag" id="cpu-core-count">-- CORES</div>
+    </div>
+    <div style="display:flex; align-items:baseline; gap:10px;">
+      <div class="big-value" id="cpu-pct">--<span class="unit">%</span></div>
+      <div class="gauge-wrap" style="flex:1;">
+        <div class="gauge-track" style="height:8px;">
+          <div class="gauge-fill" id="cpu-bar"></div>
+        </div>
+      </div>
+    </div>
+    <div class="cores-grid" id="cores-grid"></div>
+    <div class="chart-wrap">
+      <canvas id="chart-cpu"></canvas>
+    </div>
+    <div id="core-legend" style="display:flex; flex-wrap:wrap; gap:4px 10px;"></div>
+  </div>
+
+  <!-- Memory -->
+  <div class="panel panel-mem">
+    <div class="panel-header">
+      <div class="panel-title">MEMORY</div>
+      <div class="panel-tag" id="mem-total-tag">-- GB</div>
+    </div>
+    <div class="big-value" id="mem-pct">--<span class="unit">%</span></div>
+    <div class="gauge-wrap">
+      <div class="gauge-track">
+        <div class="gauge-fill" id="mem-bar"></div>
+      </div>
+      <div class="gauge-label">
+        <span id="mem-used">-- GB used</span>
+        <span id="mem-avail">-- GB free</span>
+      </div>
+    </div>
+    <div class="mem-detail">
+      <div class="mem-item">
+        <div class="mem-item-label">USED</div>
+        <div class="mem-item-val" id="mem-used-gb">--</div>
+      </div>
+      <div class="mem-item">
+        <div class="mem-item-label">FREE</div>
+        <div class="mem-item-val" id="mem-free-gb">--</div>
+      </div>
+      <div class="mem-item">
+        <div class="mem-item-label">TOTAL</div>
+        <div class="mem-item-val" id="mem-total-gb">--</div>
+      </div>
+    </div>
+    <div style="margin-top:4px;">
+      <div class="gauge-wrap">
+        <div class="gauge-label">
+          <span style="color:var(--amber);letter-spacing:0.15em;font-size:0.6rem;">SWAP</span>
+          <span id="swap-pct" style="color:var(--amber);">--%</span>
+        </div>
+        <div class="gauge-track" style="margin-top:4px;">
+          <div class="gauge-fill" id="swap-bar" style="background:var(--amber);box-shadow:0 0 6px rgba(255,176,32,0.4);"></div>
+        </div>
+        <div class="gauge-label" style="margin-top:3px;">
+          <span id="swap-used">-- used</span>
+          <span id="swap-total">-- total</span>
+        </div>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="chart-mem"></canvas>
+    </div>
+  </div>
+
+  <!-- Network -->
+  <div class="panel panel-net">
+    <div class="panel-header">
+      <div class="panel-title">NETWORK</div>
+      <div class="panel-tag">I/O RATE</div>
+    </div>
+    <div class="net-row">
+      <span class="net-arrow down">▼</span>
+      <div class="net-val" id="net-recv">--</div>
+      <span class="net-unit" id="net-recv-unit">--</span>
+    </div>
+    <div class="net-row">
+      <span class="net-arrow up">▲</span>
+      <div class="net-val up-val" id="net-sent">--</div>
+      <span class="net-unit" id="net-sent-unit">--</span>
+    </div>
+    <div style="margin-top:6px;" class="gauge-wrap">
+      <div class="gauge-label">
+        <span>TOTAL RX</span>
+        <span id="net-rx-total">--</span>
+      </div>
+      <div class="gauge-label" style="margin-top:2px;">
+        <span>TOTAL TX</span>
+        <span id="net-tx-total">--</span>
+      </div>
+    </div>
+    <div class="chart-wrap" style="margin-top:4px;">
+      <canvas id="chart-net"></canvas>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────────
+const HISTORY = 60;
+const GREEN   = '#39ff6e';
+const CYAN    = '#00e5ff';
+const AMBER   = '#f5a623';
+const DIM     = '#1a3320';
+const TEXT_DIM = '#4a7a5a';
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let numCores      = 0;
+let coreHistories = [];
+const memHistory  = Array(HISTORY).fill(0);
+const netRxHist   = Array(HISTORY).fill(0);
+const netTxHist   = Array(HISTORY).fill(0);
+let coresInitialized = false;
+
+// ─── Clock ────────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('de-DE', { hour12: false });
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function fmt(bytes) {
+  if (bytes === 0) return ['0', 'B/s'];
+  const units = ['B/s','KB/s','MB/s','GB/s'];
+  const i = Math.min(3, Math.floor(Math.log2(bytes) / 10));
+  return [(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0), units[i]];
+}
+
+function fmtBytes(bytes) {
+  const gb = bytes / 1024**3;
+  if (gb >= 1) return gb.toFixed(1) + ' GB';
+  const mb = bytes / 1024**2;
+  return mb.toFixed(0) + ' MB';
+}
+
+function colorClass(pct) {
+  if (pct >= 90) return 'crit';
+  if (pct >= 70) return 'warn';
+  return '';
+}
+
+function setGauge(barId, pct) {
+  const bar = document.getElementById(barId);
+  bar.style.width = pct + '%';
+  bar.className = 'gauge-fill ' + colorClass(pct);
+}
+
+function setBig(id, val, unit='%') {
+  const el = document.getElementById(id);
+  const cls = colorClass(val);
+  el.className = 'big-value ' + cls;
+  el.innerHTML = `${val}<span class="unit">${unit}</span>`;
+}
+
+// ─── Canvas Charts ────────────────────────────────────────────────────────────
+function makeChart(canvasId, colors, max, fill=true) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext('2d');
+  let datasets = colors.map(() => Array(HISTORY).fill(0));
+
+  new ResizeObserver(entries => {
+    const r = entries[0].contentRect;
+    canvas.width  = r.width  * devicePixelRatio;
+    canvas.height = r.height * devicePixelRatio;
+    drawInner();
+  }).observe(canvas.parentElement);
+
+  function drawInner() {
+    const W = canvas.width, H = canvas.height;
+    if (!W || !H) return;
+    ctx.clearRect(0, 0, W, H);
+
+    // Grid lines
+    ctx.strokeStyle = DIM;
+    ctx.lineWidth = 1;
+    for (let g = 0; g <= 4; g++) {
+      const y = (g / 4) * H;
+      ctx.beginPath();
+      ctx.moveTo(0, y); ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+
+    datasets.forEach((pts, di) => {
+      const color = colors[di];
+      const step = W / (HISTORY - 1);
+
+      if (fill) {
+        ctx.beginPath();
+        ctx.moveTo(0, H);
+        pts.forEach((v, i) => {
+          const x = i * step;
+          const y = H - (v / max) * H;
+          i === 0 ? ctx.lineTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.lineTo((HISTORY - 1) * step, H);
+        ctx.closePath();
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, color + '40');
+        grad.addColorStop(1, color + '06');
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4 * devicePixelRatio;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10 * devicePixelRatio;
+      pts.forEach((v, i) => {
+        const x = i * step;
+        const y = H - (v / max) * H;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    });
+  }
+
+  function draw(data) {
+    if (Array.isArray(data[0])) datasets = data;
+    else datasets = [data];
+    drawInner();
+  }
+
+  return { draw };
+}
+
+// ─── Stacked Core Chart ───────────────────────────────────────────────────────
+function coreColors(n) {
+  return Array.from({length: n}, (_, i) => {
+    const hue = (140 + (i * 180 / Math.max(n - 1, 1))) % 360;
+    return `hsl(${hue},100%,55%)`;
+  });
+}
+
+function makeStackedCoreChart(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext('2d');
+
+  new ResizeObserver(entries => {
+    const r = entries[0].contentRect;
+    canvas.width  = r.width  * devicePixelRatio;
+    canvas.height = r.height * devicePixelRatio;
+    draw();
+  }).observe(canvas.parentElement);
+
+  function draw() {
+    if (!numCores) return;
+    const W = canvas.width, H = canvas.height;
+    if (!W || !H) return;
+    ctx.clearRect(0, 0, W, H);
+    const max = numCores * 100;
+    const colors = coreColors(numCores);
+    const step = W / (HISTORY - 1);
+
+    // Grid lines
+    ctx.strokeStyle = DIM;
+    ctx.lineWidth = 1;
+    for (let g = 0; g <= 4; g++) {
+      const y = (g / 4) * H;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Precompute cumulative sums for each time step
+    // cumul[c][i] = sum of cores 0..c at time i
+    const cumul = [];
+    for (let c = 0; c < numCores; c++) {
+      cumul[c] = Array(HISTORY).fill(0);
+      for (let i = 0; i < HISTORY; i++) {
+        cumul[c][i] = (c > 0 ? cumul[c-1][i] : 0) + coreHistories[c][i];
+      }
+    }
+
+    // Draw stacked areas from top core down so bottom cores paint over top
+    for (let c = numCores - 1; c >= 0; c--) {
+      const color = colors[c];
+      ctx.beginPath();
+      // Top edge (cumul[c]) left to right
+      for (let i = 0; i < HISTORY; i++) {
+        const x = i * step;
+        const y = H - (cumul[c][i] / max) * H;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      // Bottom edge (cumul[c-1] or 0) right to left
+      for (let i = HISTORY - 1; i >= 0; i--) {
+        const x = i * step;
+        const base = c > 0 ? cumul[c-1][i] : 0;
+        const y = H - (base / max) * H;
+        ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = color + '55';
+      ctx.fill();
+
+      // Top line
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4 * devicePixelRatio;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10 * devicePixelRatio;
+      for (let i = 0; i < HISTORY; i++) {
+        const x = i * step;
+        const y = H - (cumul[c][i] / max) * H;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  return { draw };
+}
+
+const chartCPU = makeStackedCoreChart('chart-cpu');
+const chartMem = makeChart('chart-mem', [CYAN], 100);
+
+// Net chart with dynamic max + resize support
+const _netCanvas = document.getElementById('chart-net');
+const _netCtx = _netCanvas.getContext('2d');
+new ResizeObserver(entries => {
+  const r = entries[0].contentRect;
+  _netCanvas.width  = r.width  * devicePixelRatio;
+  _netCanvas.height = r.height * devicePixelRatio;
+  drawNet();
+}).observe(_netCanvas.parentElement);
+
+function drawNet() {
+  const allMax = Math.max(...netRxHist, ...netTxHist, 1);
+  const W = _netCanvas.width, H = _netCanvas.height;
+  if (!W || !H) return;
+  _netCtx.clearRect(0, 0, W, H);
+  const step = W / (HISTORY - 1);
+
+  // grid
+  _netCtx.strokeStyle = DIM; _netCtx.lineWidth = 1;
+  for (let g=0; g<=3; g++) {
+    const y = (g/3)*H;
+    _netCtx.beginPath(); _netCtx.moveTo(0,y); _netCtx.lineTo(W,y); _netCtx.stroke();
+  }
+
+  [[netRxHist, CYAN],[netTxHist, AMBER]].forEach(([pts, color]) => {
+    _netCtx.beginPath();
+    _netCtx.strokeStyle = color;
+    _netCtx.lineWidth = 4 * devicePixelRatio;
+    _netCtx.shadowColor = color;
+    _netCtx.shadowBlur = 10 * devicePixelRatio;
+    pts.forEach((v,i) => {
+      const x = i * step;
+      const y = H - (v / allMax) * H;
+      i===0 ? _netCtx.moveTo(x,y) : _netCtx.lineTo(x,y);
+    });
+    _netCtx.stroke();
+    _netCtx.shadowBlur = 0;
+  });
+}
+
+// ─── Core Bars ────────────────────────────────────────────────────────────────
+function initCores(count) {
+  numCores = count;
+  coreHistories = Array.from({length: count}, () => Array(HISTORY).fill(0));
+
+  const grid = document.getElementById('cores-grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    grid.innerHTML += `
+      <div class="core-item">
+        <div class="core-label">C${i}</div>
+        <div class="core-bar-track"><div class="core-bar" id="core-bar-${i}" style="width:0%"></div></div>
+        <div class="core-val" id="core-val-${i}">0%</div>
+      </div>`;
+  }
+
+  const colors = coreColors(count);
+  const legend = document.getElementById('core-legend');
+  legend.innerHTML = colors.map((c, i) =>
+    `<div style="display:flex;align-items:center;gap:5px;font-size:0.6rem;color:var(--text-dim);">
+       <span style="display:inline-block;width:16px;height:2px;background:${c};box-shadow:0 0 4px ${c};"></span>C${i}
+     </div>`
+  ).join('');
+
+  coresInitialized = true;
+}
+
+function updateCores(cores) {
+  cores.forEach((pct, i) => {
+    const bar = document.getElementById(`core-bar-${i}`);
+    const val = document.getElementById(`core-val-${i}`);
+    if (!bar) return;
+    bar.style.width = pct + '%';
+    const c = colorClass(pct);
+    bar.style.background = c === 'crit' ? 'var(--red)' : c === 'warn' ? 'var(--amber)' : 'var(--green)';
+    val.style.color = c === 'crit' ? 'var(--red)' : c === 'warn' ? 'var(--amber)' : 'var(--green)';
+    val.textContent = pct.toFixed(0) + '%';
+  });
+}
+
+// ─── SSE ─────────────────────────────────────────────────────────────────────
+function connect() {
+  const dot  = document.getElementById('dot');
+  const stat = document.getElementById('status-text');
+  const es   = new EventSource('/stream');
+
+  es.onopen = () => {
+    dot.style.background = 'var(--green)';
+    stat.textContent = 'LIVE';
+  };
+
+  es.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+
+    // Hostname
+    if (d.hostname) document.getElementById('hostname').textContent = d.hostname;
+
+    // CPU
+    const cpu = Math.round(d.cpu.percent);
+    setBig('cpu-pct', cpu);
+    setGauge('cpu-bar', cpu);
+
+    if (!coresInitialized) {
+      document.getElementById('cpu-core-count').textContent = d.cpu.count + ' CORES';
+      initCores(d.cpu.cores.length);
+    }
+    d.cpu.cores.forEach((pct, i) => {
+      coreHistories[i].push(pct);
+      coreHistories[i].shift();
+    });
+    updateCores(d.cpu.cores);
+
+    // Memory
+    const mem = Math.round(d.memory.percent);
+    setBig('mem-pct', mem);
+    setGauge('mem-bar', mem);
+    const memUsed = d.memory.total - d.memory.available;
+    document.getElementById('mem-used').textContent = fmtBytes(memUsed) + ' used';
+    document.getElementById('mem-avail').textContent = fmtBytes(d.memory.available) + ' free';
+    document.getElementById('mem-used-gb').textContent = fmtBytes(memUsed);
+    document.getElementById('mem-free-gb').textContent = fmtBytes(d.memory.available);
+    document.getElementById('mem-total-gb').textContent = fmtBytes(d.memory.total);
+    document.getElementById('mem-total-tag').textContent = fmtBytes(d.memory.total);
+    memHistory.push(mem); memHistory.shift();
+
+    // Swap
+    const swapPct = Math.round(d.swap.percent);
+    document.getElementById('swap-pct').textContent = swapPct + '%';
+    document.getElementById('swap-bar').style.width = swapPct + '%';
+    document.getElementById('swap-used').textContent = fmtBytes(d.swap.used) + ' used';
+    document.getElementById('swap-total').textContent = fmtBytes(d.swap.total) + ' total';
+
+    // Network
+    const [rxVal, rxUnit] = fmt(d.network.recv_rate);
+    const [txVal, txUnit] = fmt(d.network.sent_rate);
+    document.getElementById('net-recv').textContent = rxVal;
+    document.getElementById('net-recv-unit').textContent = rxUnit;
+    document.getElementById('net-sent').textContent = txVal;
+    document.getElementById('net-sent-unit').textContent = txUnit;
+    document.getElementById('net-rx-total').textContent = fmtBytes(d.network.recv_total);
+    document.getElementById('net-tx-total').textContent = fmtBytes(d.network.sent_total);
+    netRxHist.push(d.network.recv_rate); netRxHist.shift();
+    netTxHist.push(d.network.sent_rate); netTxHist.shift();
+
+    // Draw charts
+    chartCPU.draw();
+    chartMem.draw(memHistory);
+    drawNet();
+  };
+
+  es.onerror = () => {
+    dot.style.background = 'var(--red)';
+    stat.textContent = 'RECONNECTING...';
+    es.close();
+    setTimeout(connect, 3000);
+  };
+}
+
+connect();
+</script>
+</body>
+</html>
