@@ -1,15 +1,18 @@
 # MachineMonitor
 
-A real-time system metrics dashboard with a retro CRT aesthetic. Stream live CPU, memory, and network statistics with beautiful interactive charts.
+A real-time system metrics dashboard with a retro CRT aesthetic. Stream live CPU, memory, network, and Docker container statistics with beautiful interactive charts. Fast updates (4x per second) for smooth animations.
 
 ## Features
 
 - **Live Metrics**: CPU usage per core, memory/swap usage, network I/O rates
+- **Docker Monitoring**: Top 25 containers by CPU/memory with sortable columns
 - **Interactive Charts**: 60-second rolling history with smooth animations
-- **Retro Design**: Authentic CRT aesthetic with scanlines, vignette, and glowing green text
+- **Fast Updates**: 250ms refresh rate for near real-time responsiveness
+- **Retro Design**: Authentic CRT aesthetic with scanlines, vignette, and glowing text
+- **System Info**: Displays uptime and local date/time in header
 - **Responsive**: Works on desktop and mobile
 - **macOS Support**: Reads hardware temperatures (with graceful fallback on other platforms)
-- **Docker Ready**: Containerized with access to host metrics
+- **Docker Ready**: Containerized with access to host metrics and Docker daemon
 - **SSE Stream**: Server-Sent Events for real-time updates without polling
 
 ## Quick Start
@@ -18,10 +21,10 @@ A real-time system metrics dashboard with a retro CRT aesthetic. Stream live CPU
 
 ```bash
 pip install -r requirements.txt
-python3 -m uvicorn app:app --reload --port 8000
+python3 -m uvicorn app:app --reload --port 7777
 ```
 
-Open http://localhost:8000 in your browser.
+Open http://localhost:7777 in your browser.
 
 ### Docker
 
@@ -29,7 +32,7 @@ Open http://localhost:8000 in your browser.
 docker-compose up
 ```
 
-Open http://localhost:8000. Runs on port 8000.
+Open http://localhost:7777. Runs on port 7777.
 
 ## Requirements
 
@@ -62,6 +65,12 @@ Open http://localhost:8000. Runs on port 8000.
 - Total RX/TX counters
 - 60-second history chart
 
+### Docker Monitoring Panel
+- Top 25 containers sorted by CPU or memory usage
+- Click "CPU" or "MEM" column header to sort (▲/▼ indicators)
+- Real-time updates of container resource usage
+- Color-coded alerts: green (normal), yellow (70%+), red (90%+)
+
 ## Development
 
 See `CLAUDE.md` for architecture details, implementation notes, and development guidance.
@@ -86,8 +95,9 @@ Returns current metrics as JSON.
 
 ```json
 {
-  "hostname": "MacBook-Pro",
+  "hostname": "my-vps",
   "ts": 1712691234000,
+  "boot_time": 1712604834000,
   "cpu": {
     "percent": 45.2,
     "cores": [30.1, 50.5, 40.3, 55.2],
@@ -109,16 +119,24 @@ Returns current metrics as JSON.
     "recv_rate": 2097152,
     "sent_total": 1073741824,
     "recv_total": 2147483648
-  }
+  },
+  "docker": [
+    {
+      "name": "container-name",
+      "cpu_percent": 23.5,
+      "mem_usage": "256MiB / 7.706GiB",
+      "mem_percent": 3.24
+    }
+  ]
 }
 ```
 
 ### GET /stream
 
-Server-Sent Events endpoint. Streams metrics every 1 second.
+Server-Sent Events endpoint. Streams metrics every 250ms (4 times per second).
 
 ```
-data: {"hostname":"MacBook-Pro","ts":1712691234000,...}
+data: {"hostname":"my-vps","ts":1712691234000,"docker":[...],...}
 ```
 
 ## Design Notes
