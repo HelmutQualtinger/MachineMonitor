@@ -8,14 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Quick Start
 
-**Local development (macOS):**
+**Local development (Linux):**
 
 ```bash
-pip install -r requirements.txt
-python3 -m uvicorn app:app --reload --port 7777
+gcc -O2 -Wall -o machinemonitor app.c -lpthread
+./machinemonitor
 ```
 
-Visit `http://localhost:7777`
+Visit `http://localhost:8000` (or set `ENV_HOST_PROC` to point at an alternate procfs).
 
 **Docker:**
 
@@ -27,16 +27,18 @@ Runs on `http://localhost:7777` with access to host /proc, /sys, and Docker daem
 
 ## Architecture
 
-### Backend (`app.py`)
+### Backend (`app.c`)
 
-- **Framework**: FastAPI with uvicorn
-- **Metric collection**: Uses psutil for CPU, memory, network stats
-- **macOS specific**: Reads hardware temps via IOKit HID (graceful fallback if unavailable)
+- **Language/runtime**: Plain C (C11), no external libraries beyond libc and pthreads
+- **HTTP server**: Hand-rolled — a blocking `accept()` loop hands each connection to a detached pthread; requests are parsed manually (method + path only, headers otherwise ignored)
+- **Metric collection**: Reads `/proc/stat`, `/proc/meminfo`, and `/proc/net/dev` directly (prefixed with `$ENV_HOST_PROC` when set) instead of using psutil
+- **No macOS temperature support**: the container only ever runs on Linux, so the IOKit HID temperature code from the old Python version was dropped rather than ported (it was dead code there too — never wired into the metrics payload)
 - **Endpoints**:
-  - `/stream` — Server-Sent Events endpoint, yields metrics every 250ms (4x per second)
+  - `/stream` — Server-Sent Events endpoint, yields metrics every 250ms (4x per second); each connection runs its own loop on its own thread
   - `/metrics` — Single JSON response of current metrics
-  - `/` — StaticFiles mount for the dashboard
-- **Docker Integration**: Calls `docker stats --no-stream` to fetch container stats, parsed and sorted by CPU usage (top 25)
+  - `/` and other paths — serves files from `./static` (path-traversal guarded, `/` maps to `static/index.html`)
+- **Docker Integration**: Calls `docker stats --no-stream --format '{{json .}}'` via `popen()`, parses each JSON line with lightweight key lookup (not a full JSON parser — relies on Docker's own output being well-formed), sorts by CPU usage (top 25)
+- **JSON output**: Hand-built via a growable string buffer (`sbuf_t`) with a small escaper for string values (container names, mem usage strings, hostname)
 
 ### Data Structure
 
@@ -76,34 +78,30 @@ Metrics are JSON objects with:
 ## Important Implementation Details
 
 1. **Docker monitoring**:
-   - Backend: Uses `subprocess.run()` with ThreadPoolExecutor to avoid blocking async event loop
-   - Executes `docker stats --no-stream --format '{{json .}}'` and parses JSON output
-   - Extracts: container name, CPU%, memory usage, memory%
-   - Returns top 25 sorted by CPU percent descending
-   - Gracefully returns empty array if Docker unavailable (no crash)
+   - Backend: Runs `popen("docker stats --no-stream --format '{{json .}}'")` synchronously inside the request's own thread (each connection already has its own pthread, so this doesn't block other clients)
+   - Extracts: container name (truncated to 20 chars, matching the old Python slice), CPU%, memory usage, memory%, via `json_get_string()` (a `strstr`-based lookup, not a general JSON parser)
+   - Returns top 25 sorted by CPU percent descending (`qsort` + `cmp_docker`)
+   - Gracefully returns empty array if Docker unavailable (no crash) — `popen` failures and parse failures are both swallowed
    - Frontend: Client-side sorting by CPU or memory via JavaScript event listeners on column headers
    - Sort direction toggled on repeated clicks (arrows: ▲=ascending, ▼=descending)
 
 2. **CPU metrics**:
-   - Uses `psutil.cpu_percent(interval=None)` for non-blocking reads
-   - Per-core percentages are calculated separately
-   - Initialize with a warm-up call before the first SSE message
+   - Computed from successive `/proc/stat` samples (`cpu_percent_calc()`), mirroring `psutil.cpu_percent(interval=None)`
+   - Per-core percentages calculated separately from the aggregate `cpu` line and each `cpuN` line
+   - Global previous-sample state (`g_cpu_prev`, `g_cpu_have_prev`) guarded by `g_lock`; `/stream` explicitly warms it up (and sleeps 500ms) before the first SSE message, matching the old warm-up call
 
 2. **Uptime tracking**:
-   - Backend sends `boot_time` (milliseconds) from `psutil.boot_time()`
+   - Backend sends `boot_time` (milliseconds), read from the `btime` line in `/proc/stat`
    - Frontend calculates uptime: `(Date.now() - boot_time) / 1000` seconds
    - Formatted as "Xd Yh Zm Zs" in the header
    - Updated every 1 second (separate from metrics refresh)
 
 3. **Network rates**:
-   - Stored in global state: `_prev_net` (counters) and `_prev_net_time` (timestamp)
+   - Stored in global state: `prev_net` (counters, from `/proc/net/dev`) and `prev_net_ts` (monotonic timestamp), guarded by `g_lock`
    - Rate = `(current - previous) / elapsed_seconds`
-   - Guard against dt=0 with `dt = ... or 1`
+   - Guard against dt<=0 by clamping `dt` to 1
 
-4. **macOS temperature reading**:
-   - Uses pyobjc to bridge to IOKit HID APIs
-   - Enumerable only on macOS; gracefully disabled on other platforms
-   - Filtered for realistic values (0–150 °C)
+4. **No temperature reading**: the container image only ever runs on Linux, so this was intentionally not ported — see Backend architecture notes above.
 
 5. **Canvas charts**:
    - Use `ResizeObserver` on the parent container, not the canvas
@@ -123,8 +121,8 @@ Metrics are JSON objects with:
 
 - **No database or state persistence**: All metrics are computed on-demand; no storage
 - **No authentication**: Assumes running on trusted network (localhost or internal)
-- **Docker environment variables**: `ENV_HOST_PROC` and `ENV_HOST_SYS` point psutil to containerized host FS
-- **Platform differences**: macOS can read temps; Linux/Docker cannot (not a blocker)
+- **Docker environment variables**: `ENV_HOST_PROC` is read directly by `app.c` and prefixed onto `/proc` paths when running containerized; `ENV_HOST_SYS` is set for parity with the old Python version but currently unused (no `/sys` reads in the C backend)
+- **Platform**: Linux only — the binary is compiled for and only runs on Linux
 - **SSE reconnection**: Frontend retries every 3 seconds on disconnect
 - **Update frequency**: Backend sends metrics every 250ms (4 times per second) for smooth animations
 
@@ -133,5 +131,5 @@ Metrics are JSON objects with:
 Docker Compose configuration:
 - Mounts host's `/proc`, `/sys`, and `/etc/os-release` as read-only volumes for system metrics
 - Docker daemon socket is accessible for `docker stats` command to enumerate containers
-- The `pid: host` setting in compose ensures psutil can enumerate host processes and CPUs
-- Environment variables `ENV_HOST_PROC` and `ENV_HOST_SYS` point psutil to host filesystem paths
+- The `pid: host` setting in compose ensures the container's `/proc` view includes host processes and CPUs
+- `ENV_HOST_PROC` points `app.c`'s `/proc` reads at the host filesystem path
