@@ -2,7 +2,9 @@
 
 A real-time system metrics dashboard styled like a 1970s submarine control room — riveted steel panels, amber/green LCD instrument readouts. Stream live CPU, memory, network, host process, and Docker container statistics with interactive charts. Fast updates (4x per second) for smooth animations.
 
-> No screenshot yet — see [Dashboard Overview](#dashboard-overview) below for what each panel shows, or run it yourself (`docker-compose up`, then open http://localhost:7777).
+![MachineMonitor — СССР theme](docs/screenshot-soviet.png)
+
+*The dashboard in its "СССР" theme — one of three (U-Boot submarine, Bugatti cockpit, and this Soviet-constructivist layout), switchable via the toggle in the header. See [Dashboard Overview](#dashboard-overview) below for what each panel shows, or run it yourself (`docker-compose up`, then open http://localhost:7777).*
 
 ## Features
 
@@ -11,7 +13,7 @@ A real-time system metrics dashboard styled like a 1970s submarine control room 
 - **Host Process Monitoring**: Top 25 host processes by CPU/memory with sortable columns, shown next to the Docker panel
 - **Interactive Charts**: 60-second rolling history with smooth animations
 - **Fast Updates**: 250ms refresh rate for near real-time responsiveness
-- **Retro Design**: Riveted steel control-panel look — film grain, amber/green LCD readouts, segmented LED gauges. Toggle in the header switches to a second "Bugatti cockpit" theme (carbon fiber, ice-blue/red), same as strom.bekerh.ddns.net
+- **Retro Design**: Riveted steel control-panel look — film grain, amber/green LCD readouts, segmented LED gauges. Toggle in the header cycles through two more full themes: "Bugatti cockpit" (carbon fiber, ice-blue/red) and "СССР" (Soviet constructivist, red/gold), same as strom.bekerh.ddns.net
 - **System Info**: Displays uptime and local date/time in header
 - **Responsive**: Works on desktop and mobile
 - **Docker Ready**: Containerized with access to host metrics and the Docker daemon socket

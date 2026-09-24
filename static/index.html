@@ -72,6 +72,46 @@
     --core-hue-range: 60;
   }
 
+  /* Soviet control-room theme: red-enamel steel, brass rivets, mustard-gold
+     instrument glow. Third position on the same theme toggle; component CSS
+     below still never branches on theme, so only the palette changes here.
+     --mono/--disp/--lcd stay the same font stack — Play and Russo One are
+     both Cyrillic-native (Russo One is a Russian type-foundry face), so no
+     extra font loads are needed for the Russian labels. */
+  :root[data-theme="soviet"] {
+    --bg:        #170a09;
+    --paint:     #6e1414;
+    --paint2:    #431012;
+    --border:    #0c0403;
+    --bezel:     #0a0504;
+    --green:     #7dffa0;
+    --green-dim: #3c5a45;
+    --amber:     #ffcc33;
+    --cyan:      #e8c468;
+    --red:       #ff4433;
+    --text:      #f0e2c0;
+    --text-dim:  #c79a86;
+    --hi:        #ffffff20;
+    --glow:      0 0 14px rgba(125,255,160,0.6);
+    --glow-sm:   0 0 8px rgba(125,255,160,0.45);
+    --mono: 'Play', 'IBM Plex Mono', ui-monospace, sans-serif;
+    --disp: 'Russo One', 'Arial Black', Impact, sans-serif;
+    --lcd:  'VT323', 'IBM Plex Mono', ui-monospace, monospace;
+    --grain: repeating-linear-gradient(45deg, #5c1010 0 3px, #3d0c0c 3px 6px),
+             repeating-linear-gradient(-45deg, #5c101099 0 3px, transparent 3px 6px);
+    --rv: radial-gradient(circle at 38% 34%, #f5dfa0 0, #c9a227 30%, #6b4f10 62%, #241a05 68%, transparent 72%);
+    --glow-tint:     #ff44331c;
+    --chart-grid:    rgba(255,220,150,0.10);
+    --core-hue-start: 0;
+    --core-hue-range: 50;
+  }
+
+  :root[data-theme="soviet"] .logo::before {
+    content: '\2605  ';
+    color: var(--amber);
+    text-shadow: 0 0 8px rgba(255,204,51,0.7);
+  }
+
   /* A few elements build their glow from fixed hex stops (radial-gradient
      highlight/shadow stops, box-shadow colors) rather than a flat var(),
      so they need explicit per-theme overrides here — everything else
@@ -91,6 +131,23 @@
   }
   :root[data-theme="bugatti"] body::after {
     background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.77) 100%);
+  }
+
+  :root[data-theme="soviet"] .dot {
+    background: radial-gradient(circle at 35% 30%, #fff4d6, #ffcc33 45%, #7a4c02);
+    box-shadow: 0 0 0 1px #6b4f10, 0 0 10px #ffcc33;
+  }
+  :root[data-theme="soviet"] .dot.err {
+    background: radial-gradient(circle at 35% 30%, #ffd9d0, #ff4433 45%, #6a0f08);
+    box-shadow: 0 0 0 1px #6b4f10, 0 0 12px #ff4433;
+  }
+  :root[data-theme="soviet"] .chart-wrap {
+    border-color: #6b1414;
+    background: radial-gradient(ellipse at center, #2a0d0d 0, #150707 70%, #060202 100%);
+    box-shadow: 0 0 0 2px var(--border), inset 0 0 0 2px #000, inset 0 0 40px #000, inset 0 0 10px rgba(255,204,51,0.14);
+  }
+  :root[data-theme="soviet"] body::after {
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(10,0,0,0.78) 100%);
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -213,59 +270,47 @@
     letter-spacing: 0.08em;
   }
 
-  /* Theme toggle — U-Boot <-> Bugatti, same switch component as strom.bekerh.ddns.net */
+  /* Theme selector — U-Boot / Bugatti / Soviet, a riveted-bezel segmented
+     switch (same instrument-selector language as strom.bekerh.ddns.net,
+     extended from a binary toggle to a 3-position group). */
   .theme-toggle {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 2px;
+    background: var(--bezel);
+    border: 1px solid #000;
+    border-radius: 3px;
+    padding: 2px;
+    box-shadow: inset 0 2px 4px #000, 0 0 0 1px #5c6350;
+  }
+
+  .theme-btn {
+    font-family: var(--disp);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 4px 9px;
     background: none;
     border: none;
+    border-radius: 2px;
+    color: var(--text-dim);
     cursor: pointer;
-    padding: 4px;
+    transition: color 0.2s, background 0.2s;
     -webkit-tap-highlight-color: transparent;
   }
 
-  .theme-toggle .tt-label {
-    font-family: var(--disp);
-    font-size: 0.6rem;
-    letter-spacing: 0.14em;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    transition: color 0.2s;
+  .theme-btn:hover { color: var(--text); }
+
+  .theme-btn[aria-pressed="true"] {
+    color: var(--bg);
+    background: var(--amber);
+    font-weight: 700;
+    box-shadow: inset 0 1px 2px #0006, 0 0 8px var(--amber);
   }
 
-  .theme-toggle[aria-pressed="false"] .tt-a { color: var(--text); }
-  .theme-toggle[aria-pressed="true"]  .tt-b { color: var(--text); }
-
-  .theme-toggle .tt-track {
-    position: relative;
-    width: 42px; height: 20px;
-    border-radius: 12px;
-    background: var(--bezel);
-    border: 1px solid #000;
-    box-shadow: inset 0 2px 4px #000, 0 0 0 1px #5c6350;
-    flex: none;
-  }
-
-  .theme-toggle .tt-thumb {
-    position: absolute;
-    top: 2px; left: 2px;
-    width: 16px; height: 16px;
-    border-radius: 50%;
-    background: linear-gradient(180deg,#f2ecd6,#b9b28f);
-    box-shadow: 0 1px 2px #000a;
-    transition: left 0.2s, background 0.2s;
-  }
-
-  .theme-toggle[aria-pressed="true"] .tt-thumb {
-    left: 22px;
-    background: linear-gradient(180deg,#dff3ff,#39c9ff);
-  }
-
-  .theme-toggle:focus-visible {
+  .theme-btn:focus-visible {
     outline: 2px solid var(--text);
-    outline-offset: 3px;
-    border-radius: 4px;
+    outline-offset: 2px;
   }
 
   main {
@@ -669,16 +714,18 @@
     <span id="status-text">CONNECTING...</span>
   </div>
   <div class="clock" id="clock">--:--:--</div>
-  <button id="themeToggle" class="theme-toggle" type="button" aria-pressed="false" title="Theme wechseln">
-    <span class="tt-label tt-a">U-BOOT</span><span class="tt-track"><span class="tt-thumb"></span></span><span class="tt-label tt-b">BUGATTI</span>
-  </button>
+  <div id="themeToggle" class="theme-toggle" role="group" aria-label="Theme">
+    <button type="button" class="theme-btn" data-theme="uboot" aria-pressed="true">U-BOOT</button>
+    <button type="button" class="theme-btn" data-theme="bugatti" aria-pressed="false">BUGATTI</button>
+    <button type="button" class="theme-btn" data-theme="soviet" aria-pressed="false">СССР</button>
+  </div>
 </header>
 
 <main>
   <!-- CPU + Cores + History -->
   <div class="panel panel-cpu">
     <div class="panel-header">
-      <div class="panel-title">CPU</div>
+      <div class="panel-title" id="title-cpu">CPU</div>
       <div class="panel-tag" id="cpu-core-count">-- CORES</div>
     </div>
     <div style="display:flex; align-items:baseline; gap:10px;">
@@ -699,7 +746,7 @@
   <!-- Memory -->
   <div class="panel panel-mem">
     <div class="panel-header">
-      <div class="panel-title">MEMORY</div>
+      <div class="panel-title" id="title-mem">MEMORY</div>
       <div class="panel-tag" id="mem-total-tag">-- GB</div>
     </div>
     <div class="big-value" id="mem-pct">--<span class="unit">%</span></div>
@@ -714,22 +761,22 @@
     </div>
     <div class="mem-detail">
       <div class="mem-item">
-        <div class="mem-item-label">USED</div>
+        <div class="mem-item-label" id="mem-label-used">USED</div>
         <div class="mem-item-val" id="mem-used-gb">--</div>
       </div>
       <div class="mem-item">
-        <div class="mem-item-label">FREE</div>
+        <div class="mem-item-label" id="mem-label-free">FREE</div>
         <div class="mem-item-val" id="mem-free-gb">--</div>
       </div>
       <div class="mem-item">
-        <div class="mem-item-label">TOTAL</div>
+        <div class="mem-item-label" id="mem-label-total">TOTAL</div>
         <div class="mem-item-val" id="mem-total-gb">--</div>
       </div>
     </div>
     <div style="margin-top:4px;">
       <div class="gauge-wrap">
         <div class="gauge-label">
-          <span style="color:var(--amber);letter-spacing:0.15em;font-size:0.6rem;">SWAP</span>
+          <span id="swap-label" style="color:var(--amber);letter-spacing:0.15em;font-size:0.6rem;">SWAP</span>
           <span id="swap-pct" style="color:var(--amber);">--%</span>
         </div>
         <div class="gauge-track" style="margin-top:4px;">
@@ -749,8 +796,8 @@
   <!-- Network -->
   <div class="panel panel-net">
     <div class="panel-header">
-      <div class="panel-title">NETWORK</div>
-      <div class="panel-tag">I/O RATE</div>
+      <div class="panel-title" id="title-net">NETWORK</div>
+      <div class="panel-tag" id="net-io-tag">I/O RATE</div>
     </div>
     <div class="net-row">
       <span class="net-arrow down">▼</span>
@@ -764,11 +811,11 @@
     </div>
     <div style="margin-top:6px;" class="gauge-wrap">
       <div class="gauge-label">
-        <span>TOTAL RX</span>
+        <span id="net-rx-label">TOTAL RX</span>
         <span id="net-rx-total">--</span>
       </div>
       <div class="gauge-label" style="margin-top:2px;">
-        <span>TOTAL TX</span>
+        <span id="net-tx-label">TOTAL TX</span>
         <span id="net-tx-total">--</span>
       </div>
     </div>
@@ -779,12 +826,12 @@
 
   <!-- Host Processes -->
   <div class="panel panel-processes">
-    <div class="panel-title">PROCESSES TOP 25</div>
+    <div class="panel-title" id="title-proc">PROCESSES TOP 25</div>
     <table class="docker-table" id="proc-table">
       <thead>
         <tr>
-          <th>NAME</th>
-          <th>PID</th>
+          <th id="proc-name-header">NAME</th>
+          <th id="proc-pid-header">PID</th>
           <th id="proc-cpu-header">CPU</th>
           <th id="proc-mem-header">MEM</th>
         </tr>
@@ -796,11 +843,11 @@
 
   <!-- Docker -->
   <div class="panel panel-docker">
-    <div class="panel-title">DOCKER TOP 25</div>
+    <div class="panel-title" id="title-docker">DOCKER TOP 25</div>
     <table class="docker-table">
       <thead>
         <tr>
-          <th>CONTAINER</th>
+          <th id="docker-container-header">CONTAINER</th>
           <th id="docker-cpu-header">CPU</th>
           <th id="docker-mem-header">MEM</th>
         </tr>
@@ -849,6 +896,82 @@ let dockerSortAsc = false;
 let hostProcesses = [];
 let procSortKey = 'cpu_percent';
 let procSortAsc = false;
+let lastData = null;
+let hostnameReceived = false;
+
+// ─── i18n ────────────────────────────────────────────────────────────────────
+// Only the Soviet theme gets a translated label set; U-Boot/Bugatti keep the
+// original text, so switching between those two stays a pure palette swap.
+const I18N = {
+  default: {
+    title: 'MACHINE MONITOR', subtitle: 'SYSTEM TELEMETRY / LIVE',
+    uptimePrefix: 'UPTIME', uptimeUnits: ['d','h','m','s'],
+    statusConnecting: 'CONNECTING...', statusLive: 'LIVE', statusReconnecting: 'RECONNECTING...',
+    panelCpu: 'CPU', coresSuffix: 'CORES', panelMemory: 'MEMORY',
+    memUsedLabel: 'USED', memFreeLabel: 'FREE', memTotalLabel: 'TOTAL',
+    usedSuffix: 'used', freeSuffix: 'free', totalSuffix: 'total', swapLabel: 'SWAP',
+    panelNetwork: 'NETWORK', ioRate: 'I/O RATE', totalRx: 'TOTAL RX', totalTx: 'TOTAL TX',
+    panelProcesses: 'PROCESSES TOP 25', panelDocker: 'DOCKER TOP 25',
+    colName: 'NAME', colPid: 'PID', colCpu: 'CPU', colMem: 'MEM', colContainer: 'CONTAINER',
+    rateUnits: ['B/s','KB/s','MB/s','GB/s'], gbUnit: 'GB', mbUnit: 'MB',
+    locale: 'de-DE', lang: 'de',
+  },
+  soviet: {
+    title: 'МОНИТОР МАШИНЫ', subtitle: 'ТЕЛЕМЕТРИЯ СИСТЕМЫ / В ЭФИРЕ',
+    uptimePrefix: 'ВРЕМЯ РАБОТЫ', uptimeUnits: ['д','ч','м','с'],
+    statusConnecting: 'ПОДКЛЮЧЕНИЕ...', statusLive: 'В ЭФИРЕ', statusReconnecting: 'ПЕРЕПОДКЛЮЧЕНИЕ...',
+    panelCpu: 'ПРОЦЕССОР', coresSuffix: 'ЯДЕР', panelMemory: 'ПАМЯТЬ',
+    memUsedLabel: 'ИСП.', memFreeLabel: 'СВОБ.', memTotalLabel: 'ВСЕГО',
+    usedSuffix: 'исп.', freeSuffix: 'своб.', totalSuffix: 'всего', swapLabel: 'ПОДКАЧКА',
+    panelNetwork: 'СЕТЬ', ioRate: 'СКОРОСТЬ I/O', totalRx: 'ВСЕГО ПРИЁМ', totalTx: 'ВСЕГО ПЕРЕДАЧА',
+    panelProcesses: 'ПРОЦЕССЫ ТОП 25', panelDocker: 'DOCKER ТОП 25',
+    colName: 'ИМЯ', colPid: 'PID', colCpu: 'ЦП', colMem: 'ПАМ', colContainer: 'КОНТЕЙНЕР',
+    rateUnits: ['Б/с','КБ/с','МБ/с','ГБ/с'], gbUnit: 'ГБ', mbUnit: 'МБ',
+    locale: 'ru-RU', lang: 'ru',
+  },
+};
+let lbl = I18N.default;
+
+function applyStaticLabels() {
+  document.title = lbl.title;
+  document.documentElement.lang = lbl.lang;
+  if (!hostnameReceived) document.getElementById('hostname').textContent = lbl.subtitle;
+  document.getElementById('title-cpu').textContent = lbl.panelCpu;
+  document.getElementById('cpu-core-count').textContent = (numCores || '--') + ' ' + lbl.coresSuffix;
+  document.getElementById('title-mem').textContent = lbl.panelMemory;
+  document.getElementById('mem-label-used').textContent = lbl.memUsedLabel;
+  document.getElementById('mem-label-free').textContent = lbl.memFreeLabel;
+  document.getElementById('mem-label-total').textContent = lbl.memTotalLabel;
+  if (!lastData) {
+    document.getElementById('mem-used').textContent = `-- ${lbl.gbUnit} ${lbl.usedSuffix}`;
+    document.getElementById('mem-avail').textContent = `-- ${lbl.gbUnit} ${lbl.freeSuffix}`;
+    document.getElementById('swap-used').textContent = `-- ${lbl.usedSuffix}`;
+    document.getElementById('swap-total').textContent = `-- ${lbl.totalSuffix}`;
+  }
+  document.getElementById('swap-label').textContent = lbl.swapLabel;
+  document.getElementById('title-net').textContent = lbl.panelNetwork;
+  document.getElementById('net-io-tag').textContent = lbl.ioRate;
+  document.getElementById('net-rx-label').textContent = lbl.totalRx;
+  document.getElementById('net-tx-label').textContent = lbl.totalTx;
+  document.getElementById('title-proc').textContent = lbl.panelProcesses;
+  document.getElementById('proc-name-header').textContent = lbl.colName;
+  document.getElementById('proc-pid-header').textContent = lbl.colPid;
+  document.getElementById('proc-cpu-header').textContent = lbl.colCpu;
+  document.getElementById('proc-mem-header').textContent = lbl.colMem;
+  document.getElementById('title-docker').textContent = lbl.panelDocker;
+  document.getElementById('docker-container-header').textContent = lbl.colContainer;
+  document.getElementById('docker-cpu-header').textContent = lbl.colCpu;
+  document.getElementById('docker-mem-header').textContent = lbl.colMem;
+}
+
+// ─── Connection status ───────────────────────────────────────────────────────
+let connState = 'connecting';
+function updateStatusText() {
+  const stat = document.getElementById('status-text');
+  stat.textContent = connState === 'live' ? lbl.statusLive
+    : connState === 'reconnecting' ? lbl.statusReconnecting
+    : lbl.statusConnecting;
+}
 
 // ─── Clock & Uptime ───────────────────────────────────────────────────────────
 let bootTime = null;
@@ -858,23 +981,26 @@ function formatUptime(seconds) {
   const hours = Math.floor((seconds % 86400) / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
-  return `${days}d ${hours}h ${mins}m ${secs}s`;
+  const [d, h, m, s] = lbl.uptimeUnits;
+  return `${days}${d} ${hours}${h} ${mins}${m} ${secs}${s}`;
 }
 
 function updateClockAndUptime() {
   const now = new Date();
   document.getElementById('clock').textContent =
-    now.toLocaleTimeString('de-DE', { hour12: false });
+    now.toLocaleTimeString(lbl.locale, { hour12: false });
 
   // Update date/time display
-  const dateStr = now.toLocaleDateString('de-DE', { weekday: 'short', month: 'short', day: '2-digit', year: 'numeric' });
-  const timeStr = now.toLocaleTimeString('de-DE', { hour12: false });
+  const dateStr = now.toLocaleDateString(lbl.locale, { weekday: 'short', month: 'short', day: '2-digit', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString(lbl.locale, { hour12: false });
   document.getElementById('datetime').textContent = `${timeStr} | ${dateStr}`;
 
   // Update uptime if we have boot time
   if (bootTime) {
     const uptime = Math.floor((Date.now() - bootTime) / 1000);
-    document.getElementById('uptime').textContent = `UPTIME: ${formatUptime(uptime)}`;
+    document.getElementById('uptime').textContent = `${lbl.uptimePrefix}: ${formatUptime(uptime)}`;
+  } else {
+    document.getElementById('uptime').textContent = `${lbl.uptimePrefix}: --`;
   }
 }
 updateClockAndUptime();
@@ -882,17 +1008,17 @@ setInterval(updateClockAndUptime, 1000);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmt(bytes) {
-  if (bytes === 0) return ['0', 'B/s'];
-  const units = ['B/s','KB/s','MB/s','GB/s'];
+  if (bytes === 0) return ['0', lbl.rateUnits[0]];
+  const units = lbl.rateUnits;
   const i = Math.min(3, Math.floor(Math.log2(bytes) / 10));
   return [(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0), units[i]];
 }
 
 function fmtBytes(bytes) {
   const gb = bytes / 1024**3;
-  if (gb >= 1) return gb.toFixed(1) + ' GB';
+  if (gb >= 1) return gb.toFixed(1) + ' ' + lbl.gbUnit;
   const mb = bytes / 1024**2;
-  return mb.toFixed(0) + ' MB';
+  return mb.toFixed(0) + ' ' + lbl.mbUnit;
 }
 
 function colorClass(pct) {
@@ -1117,25 +1243,33 @@ function drawNet() {
   });
 }
 
-// ─── Theme toggle (U-Boot <-> Bugatti) ─────────────────────────────────────────
+// ─── Theme selector (U-Boot / Bugatti / Soviet) ────────────────────────────────
 let theme = 'uboot';
-try { const t = localStorage.getItem('mm-theme'); if (t === 'bugatti') theme = t; } catch {}
+try { const t = localStorage.getItem('mm-theme'); if (t === 'bugatti' || t === 'soviet') theme = t; } catch {}
 
-const themeToggle = document.getElementById('themeToggle');
+const themeButtons = document.querySelectorAll('.theme-btn');
 
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', theme);
-  themeToggle.setAttribute('aria-pressed', theme === 'bugatti');
+  themeButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.theme === theme)));
+  lbl = theme === 'soviet' ? I18N.soviet : I18N.default;
   refreshThemeColors();
+  applyStaticLabels();
+  updateStatusText();
+  updateClockAndUptime();
   chartCPU.draw();
   chartMem.draw(memHistory);
   drawNet();
+  if (lastData) renderData(lastData);
 }
 
-themeToggle.addEventListener('click', () => {
-  theme = theme === 'bugatti' ? 'uboot' : 'bugatti';
-  try { localStorage.setItem('mm-theme', theme); } catch {}
-  applyTheme();
+themeButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.theme === theme) return;
+    theme = btn.dataset.theme;
+    try { localStorage.setItem('mm-theme', theme); } catch {}
+    applyTheme();
+  });
 });
 
 applyTheme();
@@ -1313,27 +1447,43 @@ function updateProcessHeaderIndicators() {
 
 // ─── SSE ─────────────────────────────────────────────────────────────────────
 function connect() {
-  const dot  = document.getElementById('dot');
-  const stat = document.getElementById('status-text');
-  const es   = new EventSource('/stream');
+  const dot = document.getElementById('dot');
+  const es  = new EventSource('/stream');
 
   es.onopen = () => {
     dot.classList.remove('err');
-    stat.textContent = 'LIVE';
+    connState = 'live';
+    updateStatusText();
     initDockerTableHeaders();
     initProcessTableHeaders();
   };
 
   es.onmessage = (e) => {
     const d = JSON.parse(e.data);
+    lastData = d;
+    renderData(d);
+  };
 
+  es.onerror = () => {
+    dot.classList.add('err');
+    connState = 'reconnecting';
+    updateStatusText();
+    es.close();
+    setTimeout(connect, 3000);
+  };
+}
+
+function renderData(d) {
     // Set boot time once
     if (d.boot_time && !bootTime) {
       bootTime = d.boot_time;
     }
 
     // Hostname
-    if (d.hostname) document.getElementById('hostname').textContent = d.hostname;
+    if (d.hostname) {
+      document.getElementById('hostname').textContent = d.hostname;
+      hostnameReceived = true;
+    }
 
     // CPU
     const cpu = Math.round(d.cpu.percent);
@@ -1341,9 +1491,9 @@ function connect() {
     setGauge('cpu-bar', cpu);
 
     if (!coresInitialized) {
-      document.getElementById('cpu-core-count').textContent = d.cpu.count + ' CORES';
       initCores(d.cpu.cores.length);
     }
+    document.getElementById('cpu-core-count').textContent = d.cpu.count + ' ' + lbl.coresSuffix;
     d.cpu.cores.forEach((pct, i) => {
       coreHistories[i].push(pct);
       coreHistories[i].shift();
@@ -1355,8 +1505,8 @@ function connect() {
     setBig('mem-pct', mem);
     setGauge('mem-bar', mem);
     const memUsed = d.memory.total - d.memory.available;
-    document.getElementById('mem-used').textContent = fmtBytes(memUsed) + ' used';
-    document.getElementById('mem-avail').textContent = fmtBytes(d.memory.available) + ' free';
+    document.getElementById('mem-used').textContent = fmtBytes(memUsed) + ' ' + lbl.usedSuffix;
+    document.getElementById('mem-avail').textContent = fmtBytes(d.memory.available) + ' ' + lbl.freeSuffix;
     document.getElementById('mem-used-gb').textContent = fmtBytes(memUsed);
     document.getElementById('mem-free-gb').textContent = fmtBytes(d.memory.available);
     document.getElementById('mem-total-gb').textContent = fmtBytes(d.memory.total);
@@ -1367,8 +1517,8 @@ function connect() {
     const swapPct = Math.round(d.swap.percent);
     document.getElementById('swap-pct').textContent = swapPct + '%';
     document.getElementById('swap-bar').style.width = swapPct + '%';
-    document.getElementById('swap-used').textContent = fmtBytes(d.swap.used) + ' used';
-    document.getElementById('swap-total').textContent = fmtBytes(d.swap.total) + ' total';
+    document.getElementById('swap-used').textContent = fmtBytes(d.swap.used) + ' ' + lbl.usedSuffix;
+    document.getElementById('swap-total').textContent = fmtBytes(d.swap.total) + ' ' + lbl.totalSuffix;
 
     // Network
     const [rxVal, rxUnit] = fmt(d.network.recv_rate);
@@ -1398,14 +1548,6 @@ function connect() {
     chartCPU.draw();
     chartMem.draw(memHistory);
     drawNet();
-  };
-
-  es.onerror = () => {
-    dot.classList.add('err');
-    stat.textContent = 'RECONNECTING...';
-    es.close();
-    setTimeout(connect, 3000);
-  };
 }
 
 connect();
