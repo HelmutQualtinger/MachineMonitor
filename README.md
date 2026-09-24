@@ -1,6 +1,6 @@
 # MachineMonitor
 
-A real-time system metrics dashboard with a retro CRT aesthetic. Stream live CPU, memory, network, and Docker container statistics with beautiful interactive charts. Fast updates (4x per second) for smooth animations.
+A real-time system metrics dashboard styled like a 1970s submarine control room — riveted steel panels, amber/green LCD instrument readouts. Stream live CPU, memory, network, host process, and Docker container statistics with interactive charts. Fast updates (4x per second) for smooth animations.
 
 > No screenshot yet — see [Dashboard Overview](#dashboard-overview) below for what each panel shows, or run it yourself (`docker-compose up`, then open http://localhost:7777).
 
@@ -11,7 +11,7 @@ A real-time system metrics dashboard with a retro CRT aesthetic. Stream live CPU
 - **Host Process Monitoring**: Top 25 host processes by CPU/memory with sortable columns, shown next to the Docker panel
 - **Interactive Charts**: 60-second rolling history with smooth animations
 - **Fast Updates**: 250ms refresh rate for near real-time responsiveness
-- **Retro Design**: Authentic CRT aesthetic with scanlines, vignette, and glowing text
+- **Retro Design**: Riveted steel control-panel look — film grain, amber/green LCD readouts, segmented LED gauges. Toggle in the header switches to a second "Bugatti cockpit" theme (carbon fiber, ice-blue/red), same as strom.bekerh.ddns.net
 - **System Info**: Displays uptime and local date/time in header
 - **Responsive**: Works on desktop and mobile
 - **Docker Ready**: Containerized with access to host metrics and the Docker daemon socket
@@ -47,6 +47,19 @@ Open http://localhost:7777. Runs on port 7777.
 - **Memory**: Minimal (a few MB overhead)
 - **CPU**: Negligible impact
 - **Network**: None required (local monitoring only by default)
+
+## Security
+
+**This container effectively has root-level access to the host it runs on — this is not accidental, but it's important to understand before you deploy it anywhere.** To show real host metrics (not just the container's own isolated view), the Docker Compose setup deliberately breaks Docker's normal container isolation:
+
+- **`pid: host`** — the container shares the host's process namespace, so it can see (and read `/proc/<pid>/environ` and command lines for) *every* process on the host, not just its own.
+- **Host `/proc` and `/sys` mounted read-only** — read-only stops the container from *writing* to host process/kernel state, but reading host-wide metrics was the point.
+- **Docker socket mounted** — this is the one to pay attention to. Even mounted `:ro`, that flag only stops the container from replacing the socket *file*; it does nothing to limit what you can do once connected to it. Anyone who can reach that socket can ask the Docker API to start a brand-new container with full host filesystem access and `--privileged` — a direct path to root on the host, regardless of the `:ro` flag.
+
+**In short**: a security bug in this app (or anything with network access to its port) is a security bug in your host, not just in a sandboxed container. Treat it accordingly:
+- Never expose port 7777 to an untrusted network or the public internet.
+- Run it only on a trusted LAN or behind a reverse proxy with authentication, if it must be reachable beyond localhost.
+- This tradeoff is the same one cAdvisor, netdata, and node-exporter make — it's normal for this class of tool, just not something to deploy casually on an internet-facing box.
 
 ## Dashboard Overview
 
@@ -165,11 +178,12 @@ data: {"hostname":"my-vps","ts":1712691234000,"docker":[...],...}
 
 ## Design Notes
 
-- No authentication — assumes trusted network
+- No authentication — assumes trusted network (see [Security](#security) above)
 - No data persistence — metrics computed on-demand
 - Single-page application — no build step required
 - Canvas rendering for performant charts
 - Docker stats are fetched by talking directly to the Docker daemon's HTTP API over its unix socket — no `docker` CLI binary is bundled in the image
+- Network rate only counts real NICs — loopback and Docker's own internal bridges/veth interfaces are excluded, since traffic between containers otherwise gets counted multiple times over (once per veth, once per bridge) and would report a rate far higher than any actual external bandwidth
 
 ## License
 

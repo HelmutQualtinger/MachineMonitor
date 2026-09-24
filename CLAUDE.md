@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**MachineMonitor** is a real-time system metrics dashboard. It streams CPU, memory, network, and Docker container statistics to a retro-styled web interface with live charts and fast updates (250ms). Runs locally or in Docker; supports macOS hardware temperature sensors.
+**MachineMonitor** is a real-time system metrics dashboard. It streams CPU, memory, network, host process, and Docker container statistics to a retro-styled web interface with live charts and fast updates (250ms). Runs locally or in Docker.
 
 ## Quick Start
 
@@ -68,7 +68,7 @@ Metrics are JSON objects with:
 ### Frontend (`static/index.html`)
 
 - Single HTML file with inline CSS and vanilla JavaScript
-- **Design**: Retro CRT aesthetic (bright green on dark), scanlines, vignette
+- **Design**: 1970s submarine-control-room aesthetic (riveted olive-drab steel panels, amber/green LCD instrument readouts, film-grain texture) — same design language as strom.bekerh.ddns.net, re-themed for this dashboard's data. See "CSS Design" below for details
 - **Updates**: Connects via EventSource to `/stream` for real-time updates every 250ms (4x per second)
 - **Charts**: Canvas-based history tracking (60-second rolling window)
   - Stacked core chart (all cores as percentage of total CPU)
@@ -78,7 +78,7 @@ Metrics are JSON objects with:
 - **Processes Panel**: Shows top 25 host processes (PID/name/CPU/mem), sortable by CPU or memory usage, positioned to the left of the Docker panel
 - **Header Info**: Displays system uptime and local date/time
 - **Responsive**: 3-column grid on desktop (CPU/Memory/Network on top, Processes+Docker below), stacks on mobile
-- **Color coding**: CPU panel red, Memory/Network panels green, Docker/Processes status with yellow warnings (70%+) and red alerts (90%+)
+- **Color coding**: All panels share the same olive-drab plate styling (no per-panel background tint); values themselves are traffic-lighted — green/nominal, amber (70%+), red (90%+) — via LCD-readout glow color
 
 ## Important Implementation Details
 
@@ -107,38 +107,47 @@ Metrics are JSON objects with:
    - Per-core percentages calculated separately from the aggregate `cpu` line and each `cpuN` line
    - Global previous-sample state (`g_cpu_prev`, `g_cpu_have_prev`) guarded by `g_lock`; `/stream` explicitly warms it up (and sleeps 500ms) before the first SSE message, matching the old warm-up call
 
-2. **Uptime tracking**:
+4. **Uptime tracking**:
    - Backend sends `boot_time` (milliseconds), read from the `btime` line in `/proc/stat`
    - Frontend calculates uptime: `(Date.now() - boot_time) / 1000` seconds
    - Formatted as "Xd Yh Zm Zs" in the header
    - Updated every 1 second (separate from metrics refresh)
 
-3. **Network rates**:
+5. **Network rates**:
    - Stored in global state: `prev_net` (counters, from `/proc/net/dev`) and `prev_net_ts` (monotonic timestamp), guarded by `g_lock`
    - Rate = `(current - previous) / elapsed_seconds`
    - Guard against dt<=0 by clamping `dt` to 1
-   - `read_net()` skips virtual/internal interfaces (`is_virtual_iface()`: `lo`, `docker*`, `br-*`, `veth*`, `virbr*`, `tun*`, `tap*`, `cni*`) and only sums real NICs — a Docker host's traffic between containers is otherwise counted 2-3x over (once per veth, once per bridge) with loopback traffic added on top, wildly inflating the rate without reflecting any real external bandwidth
+   - `read_net()` skips virtual/internal interfaces (`is_virtual_iface()`: `lo`, `docker*`, `br-*`, `veth*`, `virbr*`, `tun*`, `tap*`, `cni*`) and only sums real NICs. Without this, a Docker host's own inter-container traffic gets counted 2-3x over — once on the sending container's `veth`, again on the bridge it's attached to — with the *entire host's* loopback traffic added on top of that (unrelated to this app or its containers). This app's own `/stream` traffic to open browser tabs is itself part of what gets double-counted, so the effect is self-amplifying with more dashboard tabs open. The result before this fix could read several hundred KB/s on an idle line where the real NIC (checked directly against `/proc/net/dev`) was doing tens of KB/s
 
-4. **No temperature reading**: the container image only ever runs on Linux, so this was intentionally not ported — see Backend architecture notes above.
+6. **No temperature reading**: the container image only ever runs on Linux, so this was intentionally not ported — see Backend architecture notes above.
 
-5. **Canvas charts**:
+7. **Canvas charts**:
    - Use `ResizeObserver` on the parent container, not the canvas
    - Set `canvas.width/height` in physical pixels, scale by `devicePixelRatio`
    - All datasets maintain a fixed history of 60 entries (shift/push pattern)
 
-6. **CSS Design**:
-   - Colors defined as CSS variables (--green, --amber, --text-dim, etc.)
-   - Bright panel backgrounds: CPU #3d1515 (red), Memory/Network #0f2710 (green)
-   - Brighter text-dim: #66d966 (was #4a8a5a) for better readability
-   - Scanline effect: `repeating-linear-gradient` with 2px transparent, 2px semi-transparent black
-   - Vignette: `radial-gradient` at 55% radius with increasing darkness
-   - Docker container names: Light green #88ff88 with subtle glow
-   - Column header sorting: Click to toggle sort, visual indicators (▲/▼)
+8. **CSS Design** (submarine-control-room theme, matching strom.bekerh.ddns.net):
+   - Colors as CSS variables: `--bg`/`--paint`/`--paint2` (olive-drab steel), `--green`/`--amber`/`--red` (LCD status colors), `--text`/`--text-dim` (khaki), `--bezel` (near-black instrument-window background)
+   - Fonts as CSS variables: `--disp` (Russo One — stencilled panel titles/labels), `--lcd` (VT323 — all numeric readouts: big values, gauges, table cells, clock), `--mono` (Play — body text)
+   - `.panel`: riveted steel plate — `--rivets` (four corner radial-gradients) + `--grain` (SVG turbulence noise, data-URI) + a top-to-bottom paint gradient, all layered as multiple `background` values; unified across all panels (no more per-panel accent color)
+   - `.big-value`, `.net-val`, `.clock`: dark instrument bezel (`--bezel` background, inset shadow, 1px border) around VT323 text with a colored `text-shadow` glow — the "amber LCD window" look
+   - `.gauge-fill`/`.core-bar`: colored fill inside a dark bezel track, masked with a repeating-linear-gradient to render as discrete LED segments rather than a solid bar
+   - `.chart-wrap`: canvas wrapped in a thick steel border with a radial dark-green background (phosphor CRT tube) and a scanline overlay pseudo-element, plus corner rivets
+   - `.docker-table`/`#proc-table` numeric cells get a `lcd-cell` class (VT323 font + green/amber/red glow) added in the JS row templates; the traffic-light thresholds (70%/90%) are unchanged from before, just re-expressed as glow color instead of a boxed highlight
+   - Status dot (`#dot`): CSS-driven via an `.err` class toggled in JS (`dot.classList`), not an inline `style.background` — needed so the radial-gradient "lamp" look survives state changes, since a flat inline color would overwrite it
+   - Column header sorting: Click to toggle sort, visual indicators (▲/▼) — unchanged from before
+
+9. **Theme toggle (U-Boot ⟷ Bugatti)**, also matching strom.bekerh.ddns.net:
+   - A second full palette lives in `:root[data-theme="bugatti"]` (carbon-fiber dark, EB-blue `--green`, orange `--amber`, chrome rivets, Bebas Neue/Chakra Petch fonts) that overrides the same variable names the default U-Boot theme sets at `:root` — component CSS never branches on theme, it just reads variables
+   - A few effects build their colors from fixed hex stops rather than a flat `var()` (radial-gradient highlight/shadow stops on `.dot`/`.chart-wrap`) and so need small explicit `:root[data-theme="bugatti"] .selector {...}` overrides alongside the variable block — everything else re-themes for free
+   - The toggle button (`#themeToggle`, header) flips `document.documentElement`'s `data-theme` attribute and persists the choice to `localStorage['mm-theme']`
+   - Canvas-drawn charts can't read CSS variables directly (2D context colors must be literal strings), so `GREEN`/`CYAN`/`AMBER`/`DIM`/`CORE_HUE_START`/`CORE_HUE_RANGE` are `let`s re-populated by `refreshThemeColors()` (via `getComputedStyle(...).getPropertyValue()`) every time `applyTheme()` runs; `makeChart()` takes a `colorsFn` callback (re-invoked on every redraw) rather than a static color array so an existing chart recolors in place instead of needing to be recreated
+   - `coreColors()` reads the same `CORE_HUE_START`/`CORE_HUE_RANGE` so the per-core stacked-chart hues shift from green/amber (U-Boot) to blue/cyan (Bugatti) too
 
 ## Development Notes
 
 - **No database or state persistence**: All metrics are computed on-demand; no storage
-- **No authentication**: Assumes running on trusted network (localhost or internal)
+- **No authentication**: Assumes running on trusted network (localhost or internal) — see "Security Model" below for why this matters more than usual for this particular app
 - **Docker environment variables**: `ENV_HOST_PROC` is read directly by `app.c` and prefixed onto `/proc` paths when running containerized; `ENV_HOST_SYS` is set for parity with the old Python version but currently unused (no `/sys` reads in the C backend); `ENV_DOCKER_SOCK` optionally overrides the Docker daemon socket path (default `/var/run/docker.sock`)
 - **Platform**: Linux only — the binary is compiled for and only runs on Linux
 - **SSE reconnection**: Frontend retries every 3 seconds on disconnect
@@ -151,3 +160,17 @@ Docker Compose configuration:
 - Docker daemon socket is bind-mounted so `app.c` can call the daemon's HTTP API directly to enumerate containers and fetch stats
 - The `pid: host` setting in compose ensures the container's `/proc` view includes host processes and CPUs
 - `ENV_HOST_PROC` points `app.c`'s `/proc` reads at the host filesystem path
+
+## Security Model
+
+**This container has effectively root-equivalent access to the host.** That's not a bug — it's the necessary cost of a host-monitoring tool that reads real CPU/memory/process/Docker data instead of the container's own isolated view — but it's a much bigger trust boundary than "runs on a web server" and should be understood before deploying this anywhere:
+
+- **`pid: host`** disables PID-namespace isolation. `/proc` inside the container is the *host's* `/proc`: every host process is visible, including `/proc/<pid>/environ` and `/proc/<pid>/cmdline` for processes owned by other users/services. Anything that puts secrets in an env var or a command-line argument (common for API keys, DB passwords, etc.) is readable from inside this container.
+- **`/proc` and `/sys` bind-mounted `:ro`** limits *writes* to the host's procfs/sysfs, but reading was already the point (that's how `read_cpu_times()`/`read_meminfo()`/`read_process_snapshot()` work) — the `:ro` flag is about not letting a compromised container tamper with host process state via `/proc`, not about limiting what it can see.
+- **The Docker socket mount is the big one.** `/var/run/docker.sock:/var/run/docker.sock:ro` is easy to misread as "read-only Docker access." It isn't: the `:ro` flag governs the container's filesystem view of the *socket file itself* (it can't delete/replace it) — it has no effect on what you can do once connected to it. The Docker Engine API reachable over that socket has no separate read-only mode; anyone who can `connect()` to it can create and start a brand-new container with `-v /:/host --privileged`, which is a straightforward path to full root on the host. `docker_http_get()` in `app.c` only ever issues `GET` requests today, but the socket itself doesn't enforce that — a bug in this code (or a compromised dependency, if any were ever added) could issue any Docker API call, not just the read-only ones this app happens to use.
+- **Combined effect**: `pid: host` + Docker socket access means a code-execution vulnerability in `app.c` (buffer overflow in the JSON/HTTP parsing, a supply-chain compromise, etc.) would compromise the *host*, not just this container. This is a materially different risk profile than a typical "no authentication, trusted network" web app.
+
+**Practical implications**:
+- Never expose port 7777/8000 to an untrusted network or the public internet — the existing "no authentication, trusted network only" stance in Development Notes below is not sufficient on its own given the above; treat reaching this port as equivalent to reaching a root shell on the host.
+- Treat any change to `app.c`'s Docker-socket or `/proc` handling as security-sensitive — it runs with the access described above, not with normal container isolation.
+- This tradeoff is standard for host-monitoring tools (cAdvisor, netdata, node-exporter make the same call), but it's worth being explicit about rather than assuming Docker's usual container sandboxing still applies here — it doesn't.

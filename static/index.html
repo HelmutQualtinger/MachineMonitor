@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>MACHINE MONITOR</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&family=Russo+One&family=VT323&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&family=Russo+One&family=VT323&family=Bebas+Neue&family=Chakra+Petch:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
   /* U-Boot-Kommandozentrale, ca. 1970: olivgrün lackierter Stahl, genietete Frontplatten,
      gravierte Schablonenschrift, Anzeigefenster in Bernstein/Phosphor-Grün. Same design
@@ -33,13 +33,71 @@
     --rv: radial-gradient(circle at 38% 34%, #b3b7a0 0, #6b7160 30%, #2a2e22 62%, #0d0f0a 68%, transparent 72%);
     --rivets: var(--rv) left 6px top 6px/12px 12px no-repeat, var(--rv) right 6px top 6px/12px 12px no-repeat,
               var(--rv) left 6px bottom 6px/12px 12px no-repeat, var(--rv) right 6px bottom 6px/12px 12px no-repeat;
+    --glow-tint:     #ffe9a01c;
+    --chart-grid:    rgba(220,255,220,0.10);
+    --core-hue-start: 45;
+    --core-hue-range: 105;
+  }
+
+  /* Bugatti-Cockpit-Theme: Carbonfaser, Chrom, EB-Blau/Rot statt Olivgrün/Bernstein.
+     Selectable via the theme toggle in the header; same design language as
+     strom.bekerh.ddns.net's second theme. All other component rules below
+     read these variables, so no component CSS needs its own [data-theme]
+     override — only the palette changes. */
+  :root[data-theme="bugatti"] {
+    --bg:        #0a0b0d;
+    --paint:     #1b1d21;
+    --paint2:    #0d0e11;
+    --border:    #000000;
+    --bezel:     #050608;
+    --green:     #39c9ff;
+    --green-dim: #1c4a5c;
+    --amber:     #ff9f1a;
+    --cyan:      #e9ecf1;
+    --red:       #ff3145;
+    --text:      #eef1f5;
+    --text-dim:  #868c97;
+    --hi:        #ffffff12;
+    --glow:      0 0 14px rgba(57,201,255,0.55);
+    --glow-sm:   0 0 8px rgba(57,201,255,0.4);
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --disp: 'Bebas Neue', 'Oswald', sans-serif;
+    --lcd:  'Chakra Petch', 'IBM Plex Mono', monospace;
+    --grain: repeating-linear-gradient(45deg, #1e2024 0 3px, #17181b 3px 6px),
+             repeating-linear-gradient(-45deg, #1e202499 0 3px, transparent 3px 6px);
+    --rv: radial-gradient(circle at 38% 32%, #fff 0, #e2e5ea 22%, #9096a1 46%, #4a4e56 68%, transparent 74%);
+    --glow-tint:     #39c9ff14;
+    --chart-grid:    rgba(180,220,255,0.12);
+    --core-hue-start: 195;
+    --core-hue-range: 60;
+  }
+
+  /* A few elements build their glow from fixed hex stops (radial-gradient
+     highlight/shadow stops, box-shadow colors) rather than a flat var(),
+     so they need explicit per-theme overrides here — everything else
+     above already re-themes purely from the variable block. */
+  :root[data-theme="bugatti"] .dot {
+    background: radial-gradient(circle at 35% 30%, #d6f2ff, #39c9ff 45%, #0b4d6a);
+    box-shadow: 0 0 0 1px #4a4e56, 0 0 10px #39c9ff;
+  }
+  :root[data-theme="bugatti"] .dot.err {
+    background: radial-gradient(circle at 35% 30%, #ffd9d0, #ff2f3a 45%, #6a0009);
+    box-shadow: 0 0 0 1px #4a4e56, 0 0 12px #ff3145;
+  }
+  :root[data-theme="bugatti"] .chart-wrap {
+    border-color: #3a3e46;
+    background: radial-gradient(ellipse at center, #101820 0, #070b0f 70%, #030405);
+    box-shadow: 0 0 0 2px var(--border), inset 0 0 0 2px #000, inset 0 0 40px #000, inset 0 0 10px rgba(57,201,255,0.16);
+  }
+  :root[data-theme="bugatti"] body::after {
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.77) 100%);
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
     background:
-      radial-gradient(900px 380px at 50% -8%, #ffe9a01c, transparent 70%),
+      radial-gradient(900px 380px at 50% -8%, var(--glow-tint), transparent 70%),
       var(--grain), var(--bg);
     color: var(--text);
     font-family: var(--mono);
@@ -153,6 +211,61 @@
     font-weight: 700;
     color: var(--text-dim);
     letter-spacing: 0.08em;
+  }
+
+  /* Theme toggle — U-Boot <-> Bugatti, same switch component as strom.bekerh.ddns.net */
+  .theme-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .theme-toggle .tt-label {
+    font-family: var(--disp);
+    font-size: 0.6rem;
+    letter-spacing: 0.14em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    transition: color 0.2s;
+  }
+
+  .theme-toggle[aria-pressed="false"] .tt-a { color: var(--text); }
+  .theme-toggle[aria-pressed="true"]  .tt-b { color: var(--text); }
+
+  .theme-toggle .tt-track {
+    position: relative;
+    width: 42px; height: 20px;
+    border-radius: 12px;
+    background: var(--bezel);
+    border: 1px solid #000;
+    box-shadow: inset 0 2px 4px #000, 0 0 0 1px #5c6350;
+    flex: none;
+  }
+
+  .theme-toggle .tt-thumb {
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: linear-gradient(180deg,#f2ecd6,#b9b28f);
+    box-shadow: 0 1px 2px #000a;
+    transition: left 0.2s, background 0.2s;
+  }
+
+  .theme-toggle[aria-pressed="true"] .tt-thumb {
+    left: 22px;
+    background: linear-gradient(180deg,#dff3ff,#39c9ff);
+  }
+
+  .theme-toggle:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 3px;
+    border-radius: 4px;
   }
 
   main {
@@ -556,6 +669,9 @@
     <span id="status-text">CONNECTING...</span>
   </div>
   <div class="clock" id="clock">--:--:--</div>
+  <button id="themeToggle" class="theme-toggle" type="button" aria-pressed="false" title="Theme wechseln">
+    <span class="tt-label tt-a">U-BOOT</span><span class="tt-track"><span class="tt-thumb"></span></span><span class="tt-label tt-b">BUGATTI</span>
+  </button>
 </header>
 
 <main>
@@ -699,11 +815,26 @@
 <script>
 // ─── Constants ────────────────────────────────────────────────────────────────
 const HISTORY = 60;
-const GREEN   = '#7dffa0';
-const CYAN    = '#bfe9ff';
-const AMBER   = '#ffb23a';
-const DIM     = 'rgba(220,255,220,0.10)';
-const TEXT_DIM = '#aab092';
+
+// Canvas 2D contexts can't resolve CSS var(...) strings, so the handful of
+// colors used for chart drawing are re-read from the current computed CSS
+// custom properties whenever the theme toggles (see applyTheme() below).
+// Everything else (gauges, big-value glow, table cells, ...) is styled via
+// var(--green)/var(--amber)/var(--red) directly in CSS/inline styles and
+// re-themes automatically through the cascade.
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+let GREEN, CYAN, AMBER, DIM, CORE_HUE_START, CORE_HUE_RANGE;
+function refreshThemeColors() {
+  GREEN = cssVar('--green');
+  CYAN  = cssVar('--cyan');
+  AMBER = cssVar('--amber');
+  DIM   = cssVar('--chart-grid');
+  CORE_HUE_START = parseFloat(cssVar('--core-hue-start')) || 45;
+  CORE_HUE_RANGE = parseFloat(cssVar('--core-hue-range')) || 105;
+}
+refreshThemeColors();
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let numCores      = 0;
@@ -784,10 +915,10 @@ function setBig(id, val, unit='%') {
 }
 
 // ─── Canvas Charts ────────────────────────────────────────────────────────────
-function makeChart(canvasId, colors, max, fill=true) {
+function makeChart(canvasId, colorsFn, max, fill=true) {
   const canvas = document.getElementById(canvasId);
   const ctx = canvas.getContext('2d');
-  let datasets = colors.map(() => Array(HISTORY).fill(0));
+  let datasets = colorsFn().map(() => Array(HISTORY).fill(0));
 
   new ResizeObserver(entries => {
     const r = entries[0].contentRect;
@@ -800,6 +931,7 @@ function makeChart(canvasId, colors, max, fill=true) {
     const W = canvas.width, H = canvas.height;
     if (!W || !H) return;
     ctx.clearRect(0, 0, W, H);
+    const colors = colorsFn(); // re-read live so a theme switch recolors without recreating the chart
 
     // Grid lines
     ctx.strokeStyle = DIM;
@@ -859,7 +991,7 @@ function makeChart(canvasId, colors, max, fill=true) {
 // ─── Stacked Core Chart ───────────────────────────────────────────────────────
 function coreColors(n) {
   return Array.from({length: n}, (_, i) => {
-    const hue = 45 + (i * 105 / Math.max(n - 1, 1));
+    const hue = CORE_HUE_START + (i * CORE_HUE_RANGE / Math.max(n - 1, 1));
     return `hsl(${hue},95%,58%)`;
   });
 }
@@ -943,7 +1075,7 @@ function makeStackedCoreChart(canvasId) {
 }
 
 const chartCPU = makeStackedCoreChart('chart-cpu');
-const chartMem = makeChart('chart-mem', [CYAN], 100);
+const chartMem = makeChart('chart-mem', () => [CYAN], 100);
 
 // Net chart with dynamic max + resize support
 const _netCanvas = document.getElementById('chart-net');
@@ -984,6 +1116,29 @@ function drawNet() {
     _netCtx.shadowBlur = 0;
   });
 }
+
+// ─── Theme toggle (U-Boot <-> Bugatti) ─────────────────────────────────────────
+let theme = 'uboot';
+try { const t = localStorage.getItem('mm-theme'); if (t === 'bugatti') theme = t; } catch {}
+
+const themeToggle = document.getElementById('themeToggle');
+
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', theme);
+  themeToggle.setAttribute('aria-pressed', theme === 'bugatti');
+  refreshThemeColors();
+  chartCPU.draw();
+  chartMem.draw(memHistory);
+  drawNet();
+}
+
+themeToggle.addEventListener('click', () => {
+  theme = theme === 'bugatti' ? 'uboot' : 'bugatti';
+  try { localStorage.setItem('mm-theme', theme); } catch {}
+  applyTheme();
+});
+
+applyTheme();
 
 // ─── Core Bars ────────────────────────────────────────────────────────────────
 function initCores(count) {
