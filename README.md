@@ -2,10 +2,13 @@
 
 A real-time system metrics dashboard with a retro CRT aesthetic. Stream live CPU, memory, network, and Docker container statistics with beautiful interactive charts. Fast updates (4x per second) for smooth animations.
 
+> No screenshot yet — see [Dashboard Overview](#dashboard-overview) below for what each panel shows, or run it yourself (`docker-compose up`, then open http://localhost:7777).
+
 ## Features
 
 - **Live Metrics**: CPU usage per core, memory/swap usage, network I/O rates
 - **Docker Monitoring**: Top 25 containers by CPU/memory with sortable columns
+- **Host Process Monitoring**: Top 25 host processes by CPU/memory with sortable columns, shown next to the Docker panel
 - **Interactive Charts**: 60-second rolling history with smooth animations
 - **Fast Updates**: 250ms refresh rate for near real-time responsiveness
 - **Retro Design**: Authentic CRT aesthetic with scanlines, vignette, and glowing text
@@ -63,6 +66,12 @@ Open http://localhost:7777. Runs on port 7777.
 - Download (▼) and upload (▲) rates
 - Total RX/TX counters
 - 60-second history chart
+
+### Host Processes Panel
+- Top 25 host processes sorted by CPU or memory usage
+- Click "CPU" or "MEM" column header to sort (▲/▼ indicators)
+- Shows PID, name, CPU%, and resident memory
+- Positioned to the left of the Docker panel
 
 ### Docker Monitoring Panel
 - Top 25 containers sorted by CPU or memory usage
@@ -126,6 +135,15 @@ Returns current metrics as JSON.
       "cpu_percent": 23.5,
       "mem_usage": "256MiB / 7.706GiB",
       "mem_percent": 3.24
+    }
+  ],
+  "processes": [
+    {
+      "pid": 1234,
+      "name": "nginx",
+      "cpu_percent": 12.3,
+      "mem": 104857600,
+      "mem_percent": 1.22
     }
   ]
 }

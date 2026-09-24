@@ -27,6 +27,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <dirent.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
@@ -192,6 +193,27 @@ static void read_meminfo(mem_t *mem, swap_t *swap) {
 
 typedef struct { long long sent, recv; } net_t;
 
+/*
+ * Virtual/internal interfaces (loopback, Docker bridges, veth pairs, ...)
+ * would otherwise get summed in alongside the real NIC. Since a container's
+ * traffic to its own bridge is counted on both the veth *and* the bridge
+ * (and loopback traffic counts fully as both directions), including them
+ * inflates the rate hugely without reflecting any real external bandwidth —
+ * e.g. this dashboard's own /stream traffic to open browser tabs would get
+ * counted 2-3x over on top of unrelated host-local traffic. Only interfaces
+ * that don't match one of these virtual prefixes (the real NICs) are counted.
+ */
+static int is_virtual_iface(const char *name) {
+    static const char *prefixes[] = { "lo", "docker", "br-", "veth", "virbr", "tun", "tap", "cni", NULL };
+    for (int i = 0; prefixes[i]; i++) {
+        size_t plen = strlen(prefixes[i]);
+        if (strncmp(name, prefixes[i], plen) != 0) continue;
+        if (strcmp(prefixes[i], "lo") == 0 && name[plen] != '\0') continue; /* "lo" must match exactly */
+        return 1;
+    }
+    return 0;
+}
+
 static void read_net(net_t *out) {
     char path[600];
     snprintf(path, sizeof(path), "%s/net/dev", host_proc);
@@ -206,6 +228,11 @@ static void read_net(net_t *out) {
     while (fgets(line, sizeof(line), f)) {
         char *colon = strchr(line, ':');
         if (!colon) continue;
+        *colon = 0;
+        char *name = line;
+        while (*name == ' ' || *name == '\t') name++;
+        if (is_virtual_iface(name)) continue;
+
         long long vals[16];
         int n = 0;
         char *tok = strtok(colon + 1, " \t\n");
@@ -634,6 +661,217 @@ static int get_docker_stats_cached(docker_c_t *out, int max) {
 }
 
 /* ------------------------------------------------------------------ */
+/* host process list — top processes by CPU, read straight from /proc  */
+/* (the same tree the CPU/memory readers use, `pid: host` in compose   */
+/* makes this the *host's* process table, not just the container's)    */
+/* ------------------------------------------------------------------ */
+
+#define MAX_HOST_PROCS 25
+#define MAX_PROC_SCAN 8192
+
+typedef struct {
+    int pid;
+    char name[32];
+    long long ticks; /* utime+stime, clock ticks — only used for the delta */
+    long long rss;
+} proc_raw_t;
+
+typedef struct {
+    int pid;
+    char name[32];
+    double cpu_percent;
+    long long rss;
+    double mem_percent;
+} host_proc_t;
+
+static int cmp_proc_pid(const void *a, const void *b) {
+    return ((const proc_raw_t *)a)->pid - ((const proc_raw_t *)b)->pid;
+}
+
+static int cmp_host_proc_cpu(const void *a, const void *b) {
+    const host_proc_t *pa = a, *pb = b;
+    if (pb->cpu_percent > pa->cpu_percent) return 1;
+    if (pb->cpu_percent < pa->cpu_percent) return -1;
+    return 0;
+}
+
+/*
+ * Scans every numeric /proc/<pid> entry for just enough fields to mirror
+ * what `ps`/`top` show: CPU ticks (utime+stime from /proc/<pid>/stat,
+ * fields 14/15 — located by the *last* ')' since comm itself can contain
+ * spaces/parens), resident memory (VmRSS from /proc/<pid>/status), and a
+ * short name (/proc/<pid>/comm). A process that exits mid-scan, or one
+ * whose files aren't readable, is simply skipped — same "best effort,
+ * never crash" spirit as the Docker code.
+ */
+static int read_process_snapshot(proc_raw_t *out, int max) {
+    DIR *d = opendir(host_proc);
+    if (!d) return 0;
+
+    int n = 0;
+    struct dirent *de;
+    while (n < max && (de = readdir(d))) {
+        const char *nm = de->d_name;
+        if (!nm[0]) continue;
+        int all_digits = 1;
+        for (const char *p = nm; *p; p++) {
+            if (!isdigit((unsigned char)*p)) { all_digits = 0; break; }
+        }
+        if (!all_digits) continue;
+        int pid = atoi(nm);
+
+        char path[700];
+        snprintf(path, sizeof(path), "%s/%d/stat", host_proc, pid);
+        FILE *f = fopen(path, "r");
+        if (!f) continue;
+        char line[1024];
+        char *got_line = fgets(line, sizeof(line), f);
+        fclose(f);
+        if (!got_line) continue;
+
+        char *rest = strrchr(line, ')');
+        if (!rest) continue;
+        long long utime = 0, stime = 0;
+        if (sscanf(rest + 1, " %*c %*d %*d %*d %*d %*d %*d %*d %*d %*d %*d %lld %lld",
+                   &utime, &stime) != 2) continue;
+
+        char name[32] = {0};
+        snprintf(path, sizeof(path), "%s/%d/comm", host_proc, pid);
+        FILE *fc = fopen(path, "r");
+        if (fc) {
+            if (fgets(name, sizeof(name), fc)) {
+                size_t l = strlen(name);
+                if (l && name[l - 1] == '\n') name[l - 1] = 0;
+            }
+            fclose(fc);
+        }
+
+        long long rss = 0;
+        snprintf(path, sizeof(path), "%s/%d/status", host_proc, pid);
+        FILE *fs = fopen(path, "r");
+        if (fs) {
+            char sline[256];
+            while (fgets(sline, sizeof(sline), fs)) {
+                long long kb;
+                if (sscanf(sline, "VmRSS: %lld kB", &kb) == 1) { rss = kb * 1024; break; }
+            }
+            fclose(fs);
+        }
+
+        out[n].pid = pid;
+        strncpy(out[n].name, name, sizeof(out[n].name) - 1);
+        out[n].name[sizeof(out[n].name) - 1] = 0;
+        out[n].ticks = utime + stime;
+        out[n].rss = rss;
+        n++;
+    }
+    closedir(d);
+    return n;
+}
+
+static host_proc_t g_proc_cache[MAX_HOST_PROCS];
+static int g_proc_count = 0;
+static pthread_mutex_t g_proc_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/*
+ * Same "poll in a background thread, serve a cache" shape as the Docker
+ * stats thread — scanning thousands of /proc/<pid> entries once a second
+ * is too slow to do inline per SSE tick. CPU% is computed like `top`
+ * does: ticks delta / clk_tck / elapsed-wall-seconds * 100, i.e. relative
+ * to a single core (a process pegging 2 cores reads ~200%), not
+ * normalized to the host total like the aggregate CPU panel is. Two
+ * scan buffers are ping-ponged across iterations so the previous sample
+ * doesn't need copying; each is sorted by pid so the previous sample for
+ * a given process can be found with a binary search. Only the top
+ * MAX_HOST_PROCS by CPU are kept, via a running top-K scan (replace the
+ * current minimum) rather than sorting the full process list every tick.
+ */
+static void *host_proc_stats_thread(void *arg) {
+    (void)arg;
+    long clk_tck = sysconf(_SC_CLK_TCK);
+    if (clk_tck <= 0) clk_tck = 100;
+
+    proc_raw_t *bufs[2];
+    bufs[0] = malloc(MAX_PROC_SCAN * sizeof(proc_raw_t));
+    bufs[1] = malloc(MAX_PROC_SCAN * sizeof(proc_raw_t));
+    int cur_buf = 0;
+    int prev_n = 0;
+    struct timespec prev_ts = {0, 0};
+    int have_prev = 0;
+
+    for (;;) {
+        proc_raw_t *cur = bufs[cur_buf];
+        proc_raw_t *prev = bufs[1 - cur_buf];
+        int cur_n = read_process_snapshot(cur, MAX_PROC_SCAN);
+        struct timespec now_ts; clock_gettime(CLOCK_MONOTONIC, &now_ts);
+        qsort(cur, (size_t)cur_n, sizeof(proc_raw_t), cmp_proc_pid);
+
+        double dt = 1.0;
+        if (have_prev) {
+            dt = (double)(now_ts.tv_sec - prev_ts.tv_sec) +
+                 (double)(now_ts.tv_nsec - prev_ts.tv_nsec) / 1e9;
+            if (dt <= 0) dt = 1.0;
+        }
+
+        mem_t mem; swap_t sw;
+        read_meminfo(&mem, &sw);
+
+        host_proc_t top[MAX_HOST_PROCS];
+        int top_n = 0;
+
+        for (int i = 0; i < cur_n; i++) {
+            double cpu_pct = 0.0;
+            if (have_prev) {
+                proc_raw_t key; key.pid = cur[i].pid;
+                proc_raw_t *match = bsearch(&key, prev, (size_t)prev_n, sizeof(proc_raw_t), cmp_proc_pid);
+                if (match) {
+                    long long dticks = cur[i].ticks - match->ticks;
+                    if (dticks > 0) cpu_pct = (double)dticks / (double)clk_tck / dt * 100.0;
+                }
+            }
+
+            host_proc_t cand;
+            cand.pid = cur[i].pid;
+            memcpy(cand.name, cur[i].name, sizeof(cand.name));
+            cand.cpu_percent = cpu_pct;
+            cand.rss = cur[i].rss;
+            cand.mem_percent = mem.total > 0 ? (double)cur[i].rss / (double)mem.total * 100.0 : 0.0;
+
+            if (top_n < MAX_HOST_PROCS) {
+                top[top_n++] = cand;
+            } else {
+                int min_idx = 0;
+                for (int j = 1; j < MAX_HOST_PROCS; j++) {
+                    if (top[j].cpu_percent < top[min_idx].cpu_percent) min_idx = j;
+                }
+                if (cand.cpu_percent > top[min_idx].cpu_percent) top[min_idx] = cand;
+            }
+        }
+        qsort(top, (size_t)top_n, sizeof(host_proc_t), cmp_host_proc_cpu);
+
+        pthread_mutex_lock(&g_proc_lock);
+        memcpy(g_proc_cache, top, (size_t)top_n * sizeof(host_proc_t));
+        g_proc_count = top_n;
+        pthread_mutex_unlock(&g_proc_lock);
+
+        prev_n = cur_n;
+        prev_ts = now_ts;
+        have_prev = 1;
+        cur_buf = 1 - cur_buf;
+        sleep(1);
+    }
+    return NULL;
+}
+
+static int get_host_procs_cached(host_proc_t *out, int max) {
+    pthread_mutex_lock(&g_proc_lock);
+    int n = g_proc_count < max ? g_proc_count : max;
+    memcpy(out, g_proc_cache, (size_t)n * sizeof(host_proc_t));
+    pthread_mutex_unlock(&g_proc_lock);
+    return n;
+}
+
+/* ------------------------------------------------------------------ */
 /* metrics JSON assembly                                               */
 /* ------------------------------------------------------------------ */
 
@@ -683,6 +921,9 @@ static void build_metrics_json(sbuf_t *s) {
     docker_c_t containers[MAX_DOCKER];
     int dn = get_docker_stats_cached(containers, MAX_DOCKER);
 
+    host_proc_t procs[MAX_HOST_PROCS];
+    int pn = get_host_procs_cached(procs, MAX_HOST_PROCS);
+
     char hostname[256] = {0};
     gethostname(hostname, sizeof(hostname));
 
@@ -715,6 +956,14 @@ static void build_metrics_json(sbuf_t *s) {
         sbuf_appendf(s, ",\"cpu_percent\":%.2f,\"mem_usage\":", containers[i].cpu_percent);
         json_escape_append(s, containers[i].mem_usage);
         sbuf_appendf(s, ",\"mem_percent\":%.2f}", containers[i].mem_percent);
+    }
+    sbuf_appendf(s, "],\"processes\":[");
+    for (int i = 0; i < pn; i++) {
+        if (i) sbuf_appendf(s, ",");
+        sbuf_appendf(s, "{\"pid\":%d,\"name\":", procs[i].pid);
+        json_escape_append(s, procs[i].name);
+        sbuf_appendf(s, ",\"cpu_percent\":%.2f,\"mem\":%lld,\"mem_percent\":%.2f}",
+                     procs[i].cpu_percent, procs[i].rss, procs[i].mem_percent);
     }
     sbuf_appendf(s, "]}");
 }
@@ -902,6 +1151,10 @@ int main(void) {
     pthread_t docker_th;
     pthread_create(&docker_th, NULL, docker_stats_thread, NULL);
     pthread_detach(docker_th);
+
+    pthread_t proc_th;
+    pthread_create(&proc_th, NULL, host_proc_stats_thread, NULL);
+    pthread_detach(proc_th);
 
     printf("MachineMonitor (C) listening on :%d (host_proc=%s)\n", PORT, host_proc);
     fflush(stdout);
