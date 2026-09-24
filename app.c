@@ -8,7 +8,9 @@
  *
  * Metrics are read directly from /proc (or $ENV_HOST_PROC when running in
  * Docker with the host procfs bind-mounted). Docker container stats come
- * from `docker stats --no-stream --format '{{json .}}'`.
+ * from the Docker daemon's own HTTP API, spoken directly over its unix
+ * socket ($ENV_DOCKER_SOCK, default /var/run/docker.sock) — no `docker`
+ * CLI binary required.
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -24,6 +26,7 @@
 #include <pthread.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
@@ -235,13 +238,16 @@ static long long read_boot_time(void) {
 }
 
 /* ------------------------------------------------------------------ */
-/* docker stats                                                        */
+/* docker stats — spoken directly to the daemon's HTTP API over its    */
+/* unix socket, no `docker` CLI binary involved                        */
 /* ------------------------------------------------------------------ */
+
+static int send_all(int fd, const char *data, size_t len); /* defined in HTTP server section below */
 
 typedef struct {
     char name[32];
     double cpu_percent;
-    char mem_usage[64];
+    char mem_usage[80];
     double mem_percent;
 } docker_c_t;
 
@@ -260,6 +266,65 @@ static int json_get_string(const char *line, const char *key, char *out, size_t 
     return 1;
 }
 
+/*
+ * Looks up a bare (unquoted) numeric field "key":123 within [start, end).
+ * `end` bounds the search to one JSON sub-object so that e.g. cpu_stats's
+ * "total_usage" isn't confused with precpu_stats's field of the same name.
+ * `[start, end)` is expected to come from json_find_value() below.
+ */
+static int json_get_number_bounded(const char *start, const char *end, const char *key, double *out) {
+    if (!start) return 0;
+    char pat[64];
+    int patlen = snprintf(pat, sizeof(pat), "\"%s\":", key);
+    const char *p = strstr(start, pat);
+    if (!p || p >= end) return 0;
+    *out = atof(p + patlen);
+    return 1;
+}
+
+/*
+ * Finds the value of "key": in `hay` and returns a pointer to where it
+ * starts, with *value_end set to one past where it ends. Object/array
+ * values are matched by real brace/bracket depth-counting (skipping over
+ * quoted strings, including escapes) rather than by assuming any
+ * particular key order — Docker API versions have shuffled the order of
+ * cpu_stats/precpu_stats/memory_stats before, so that assumption doesn't
+ * hold across daemon versions. Still not a general JSON parser: no
+ * unicode-escape decoding, numbers/literals are simply scanned up to the
+ * next `,`/`}`/`]`.
+ */
+static const char *json_find_value(const char *hay, const char *key, const char **value_end) {
+    char pat[64];
+    int patlen = snprintf(pat, sizeof(pat), "\"%s\":", key);
+    const char *p = strstr(hay, pat);
+    if (!p) return NULL;
+    p += patlen;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    const char *start = p;
+
+    if (*p == '{' || *p == '[') {
+        char open = *p, close = (open == '{') ? '}' : ']';
+        int depth = 0;
+        for (; *p; p++) {
+            if (*p == '"') {
+                p++;
+                while (*p && *p != '"') { if (*p == '\\' && p[1]) p++; p++; }
+                continue;
+            }
+            if (*p == open) depth++;
+            else if (*p == close && --depth == 0) { p++; break; }
+        }
+    } else if (*p == '"') {
+        p++;
+        while (*p && *p != '"') { if (*p == '\\' && p[1]) p++; p++; }
+        if (*p == '"') p++;
+    } else {
+        while (*p && *p != ',' && *p != '}' && *p != ']') p++;
+    }
+    *value_end = p;
+    return start;
+}
+
 static int cmp_docker(const void *a, const void *b) {
     const docker_c_t *da = a, *db = b;
     if (db->cpu_percent > da->cpu_percent) return 1;
@@ -267,37 +332,266 @@ static int cmp_docker(const void *a, const void *b) {
     return 0;
 }
 
-static int get_docker_stats(docker_c_t *out, int max) {
-    FILE *p = popen("docker stats --no-stream --format '{{json .}}' 2>/dev/null", "r");
-    if (!p) return 0;
+static void format_bytes(double v, char *out, size_t outsz) {
+    static const char *units[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB" };
+    int i = 0;
+    while (v >= 1024.0 && i < 5) { v /= 1024.0; i++; }
+    if (i == 0) snprintf(out, outsz, "%.0f%s", v, units[i]);
+    else if (v < 10) snprintf(out, outsz, "%.2f%s", v, units[i]);
+    else if (v < 100) snprintf(out, outsz, "%.1f%s", v, units[i]);
+    else snprintf(out, outsz, "%.0f%s", v, units[i]);
+}
 
-    docker_c_t items[256];
-    int n = 0;
-    char line[2048];
-    while (n < 256 && fgets(line, sizeof(line), p)) {
-        char name[64] = {0}, cpu[32] = {0}, memu[64] = {0}, memp[32] = {0};
-        if (!json_get_string(line, "Name", name, sizeof(name))) continue;
-        json_get_string(line, "CPUPerc", cpu, sizeof(cpu));
-        json_get_string(line, "MemUsage", memu, sizeof(memu));
-        json_get_string(line, "MemPerc", memp, sizeof(memp));
+static const char *docker_sock_path(void) {
+    const char *p = getenv("ENV_DOCKER_SOCK");
+    return (p && *p) ? p : "/var/run/docker.sock";
+}
 
-        docker_c_t *c = &items[n];
-        strncpy(c->name, name, sizeof(c->name) - 1);
-        c->name[sizeof(c->name) - 1] = 0;
-        c->name[20] = 0; /* mirror python's [:20] truncation */
+static int docker_sock_connect(void) {
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+    /*
+     * A single /stats?stream=false call routinely takes ~1-2s on its own
+     * (the daemon samples cgroup counters over a short window); leave
+     * headroom above that so a legitimately slow-but-alive daemon doesn't
+     * get mistaken for a hung one under concurrent load.
+     */
+    struct timeval tv = { .tv_sec = 8, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-        char *pct = strchr(cpu, '%'); if (pct) *pct = 0;
-        c->cpu_percent = atof(cpu);
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, docker_sock_path(), sizeof(addr.sun_path) - 1);
 
-        strncpy(c->mem_usage, memu, sizeof(c->mem_usage) - 1);
-        c->mem_usage[sizeof(c->mem_usage) - 1] = 0;
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) { close(fd); return -1; }
+    return fd;
+}
 
-        char *pct2 = strchr(memp, '%'); if (pct2) *pct2 = 0;
-        c->mem_percent = atof(memp);
+typedef struct { char *data; size_t len; } raw_buf_t;
 
-        n++;
+static int recv_all(int fd, raw_buf_t *out) {
+    size_t cap = 8192, len = 0;
+    char *buf = malloc(cap);
+    if (!buf) return -1;
+    for (;;) {
+        if (len + 4097 > cap) {
+            cap *= 2;
+            char *nb = realloc(buf, cap);
+            if (!nb) { free(buf); return -1; }
+            buf = nb;
+        }
+        ssize_t n = recv(fd, buf + len, cap - len - 1, 0);
+        if (n <= 0) break;
+        len += (size_t)n;
     }
-    pclose(p);
+    buf[len] = 0;
+    out->data = buf;
+    out->len = len;
+    return 0;
+}
+
+/* Decodes an HTTP chunked-transfer-encoded body in place into a new buffer. */
+static char *dechunk(const char *body, size_t body_len, size_t *out_len) {
+    char *out = malloc(body_len + 1);
+    size_t olen = 0;
+    const char *p = body, *end = body + body_len;
+    while (p < end) {
+        const char *eol = memchr(p, '\r', (size_t)(end - p));
+        if (!eol || eol + 1 >= end) break;
+        long csize = strtol(p, NULL, 16);
+        if (csize <= 0) break;
+        p = eol + 2;
+        if (p + csize > end) break;
+        memcpy(out + olen, p, (size_t)csize);
+        olen += (size_t)csize;
+        p += csize + 2;
+    }
+    out[olen] = 0;
+    *out_len = olen;
+    return out;
+}
+
+/*
+ * GET over the Docker daemon's unix socket. Returns a malloc'd,
+ * null-terminated response body on 200 OK, or NULL on any failure (socket
+ * missing/unreachable, non-200 status, malformed response, ...) — callers
+ * treat that the same as "Docker unavailable", matching the old popen
+ * behaviour of swallowing failures rather than crashing.
+ */
+static char *docker_http_get(const char *path) {
+    int fd = docker_sock_connect();
+    if (fd < 0) return NULL;
+
+    char req[512];
+    int rl = snprintf(req, sizeof(req),
+        "GET %s HTTP/1.1\r\nHost: docker\r\nConnection: close\r\nAccept: application/json\r\n\r\n",
+        path);
+    if (rl < 0 || send_all(fd, req, (size_t)rl) < 0) { close(fd); return NULL; }
+
+    raw_buf_t raw;
+    if (recv_all(fd, &raw) < 0) { close(fd); return NULL; }
+    close(fd);
+
+    if (strncmp(raw.data, "HTTP/1.1 200", 12) != 0) { free(raw.data); return NULL; }
+
+    char *hdr_end = strstr(raw.data, "\r\n\r\n");
+    if (!hdr_end) { free(raw.data); return NULL; }
+    char *body = hdr_end + 4;
+    size_t body_len = raw.len - (size_t)(body - raw.data);
+
+    char saved = *hdr_end;
+    *hdr_end = 0;
+    int chunked = strcasestr(raw.data, "Transfer-Encoding: chunked") != NULL;
+    *hdr_end = saved;
+
+    char *result;
+    if (chunked) {
+        size_t dlen;
+        result = dechunk(body, body_len, &dlen);
+    } else {
+        result = malloc(body_len + 1);
+        if (result) { memcpy(result, body, body_len); result[body_len] = 0; }
+    }
+    free(raw.data);
+    return result;
+}
+
+#define MAX_DOCKER_IDS 256
+
+static int list_container_ids(char ids[][80], int max) {
+    char *body = docker_http_get("/containers/json?all=false");
+    if (!body) return 0;
+
+    int n = 0;
+    const char *p = body;
+    while (n < max) {
+        const char *m = strstr(p, "\"Id\":\"");
+        if (!m) break;
+        m += 6;
+        const char *e = strchr(m, '"');
+        if (!e) break;
+        size_t len = (size_t)(e - m);
+        if (len >= 80) len = 79;
+        memcpy(ids[n], m, len);
+        ids[n][len] = 0;
+        n++;
+        p = e + 1;
+    }
+    free(body);
+    return n;
+}
+
+/*
+ * Fetches one container's stats via /containers/<id>/stats?stream=false,
+ * which — unlike the streaming variant — returns cpu_stats *and*
+ * precpu_stats (a real previous sample the daemon already had cached) in a
+ * single response, so no separate warm-up round trip is needed. CPU% and
+ * mem% are computed the same way the `docker stats` CLI itself does.
+ */
+static int fetch_container_stat(const char *id, docker_c_t *out) {
+    char path[128];
+    snprintf(path, sizeof(path), "/containers/%.79s/stats?stream=false", id);
+    char *body = docker_http_get(path);
+    if (!body) return 0;
+
+    const char *cpu_e, *precpu_e, *mem_e;
+    const char *cpu_s = json_find_value(body, "cpu_stats", &cpu_e);
+    const char *precpu_s = json_find_value(body, "precpu_stats", &precpu_e);
+    const char *mem_s = json_find_value(body, "memory_stats", &mem_e);
+    if (!cpu_s || !precpu_s || !mem_s) {
+        free(body);
+        return 0;
+    }
+    const char *name_s = strstr(body, "\"name\":");
+
+    double cpu_total = 0, cpu_sys = 0, online = 0;
+    double precpu_total = 0, precpu_sys = 0;
+    double mem_usage = 0, mem_limit = 0;
+
+    json_get_number_bounded(cpu_s, cpu_e, "total_usage", &cpu_total);
+    json_get_number_bounded(cpu_s, cpu_e, "system_cpu_usage", &cpu_sys);
+    json_get_number_bounded(cpu_s, cpu_e, "online_cpus", &online);
+    json_get_number_bounded(precpu_s, precpu_e, "total_usage", &precpu_total);
+    json_get_number_bounded(precpu_s, precpu_e, "system_cpu_usage", &precpu_sys);
+    json_get_number_bounded(mem_s, mem_e, "usage", &mem_usage);
+    json_get_number_bounded(mem_s, mem_e, "limit", &mem_limit);
+
+    double cpu_delta = cpu_total - precpu_total;
+    double sys_delta = cpu_sys - precpu_sys;
+    double cpu_pct = 0.0;
+    if (sys_delta > 0 && cpu_delta > 0) cpu_pct = (cpu_delta / sys_delta) * (online > 0 ? online : 1.0) * 100.0;
+
+    char name[64] = {0};
+    json_get_string(name_s ? name_s : body, "name", name, sizeof(name));
+    const char *disp_name = name[0] == '/' ? name + 1 : name;
+
+    memset(out, 0, sizeof(*out));
+    size_t nlen = strlen(disp_name);
+    if (nlen > sizeof(out->name) - 1) nlen = sizeof(out->name) - 1;
+    memcpy(out->name, disp_name, nlen);
+    out->name[nlen] = 0;
+    out->name[20] = 0; /* mirror python's [:20] truncation */
+    out->cpu_percent = cpu_pct;
+    out->mem_percent = mem_limit > 0 ? mem_usage / mem_limit * 100.0 : 0.0;
+
+    char a[32], b[32];
+    format_bytes(mem_usage, a, sizeof(a));
+    format_bytes(mem_limit, b, sizeof(b));
+    snprintf(out->mem_usage, sizeof(out->mem_usage), "%.31s / %.31s", a, b);
+
+    free(body);
+    return 1;
+}
+
+typedef struct {
+    char id[80];
+    docker_c_t result;
+    int ok;
+} docker_fetch_task_t;
+
+static void *fetch_thread(void *arg) {
+    docker_fetch_task_t *t = arg;
+    t->ok = fetch_container_stat(t->id, &t->result);
+    return NULL;
+}
+
+/*
+ * `/containers/<id>/stats?stream=false` isn't actually cheap per call — it
+ * routinely takes ~1-2s even for a single container (the daemon samples
+ * cgroup counters over a short internal window). Fetched serially, N
+ * containers would take N * ~1.5s, which blows well past any reasonable
+ * poll interval. So every container is fetched from its own thread at
+ * once, same as how the `docker stats` CLI itself streams all containers
+ * concurrently — total wall time stays close to that of the single
+ * slowest container instead of the sum of all of them.
+ */
+static int get_docker_stats(docker_c_t *out, int max) {
+    char ids[MAX_DOCKER_IDS][80];
+    int nids = list_container_ids(ids, MAX_DOCKER_IDS);
+    if (nids <= 0) return 0;
+
+    docker_fetch_task_t tasks[MAX_DOCKER_IDS];
+    pthread_t threads[MAX_DOCKER_IDS];
+    for (int i = 0; i < nids; i++) {
+        memcpy(tasks[i].id, ids[i], sizeof(tasks[i].id) - 1);
+        tasks[i].id[sizeof(tasks[i].id) - 1] = 0;
+        tasks[i].ok = 0;
+        if (pthread_create(&threads[i], NULL, fetch_thread, &tasks[i]) != 0) {
+            fetch_thread(&tasks[i]); /* fall back to inline on thread-creation failure */
+            threads[i] = 0;
+        }
+    }
+    for (int i = 0; i < nids; i++) {
+        if (threads[i]) pthread_join(threads[i], NULL);
+    }
+
+    docker_c_t items[MAX_DOCKER_IDS];
+    int n = 0;
+    for (int i = 0; i < nids; i++) {
+        if (tasks[i].ok) items[n++] = tasks[i].result;
+    }
 
     qsort(items, (size_t)n, sizeof(docker_c_t), cmp_docker);
     int cnt = n < max ? n : max;
@@ -306,12 +600,12 @@ static int get_docker_stats(docker_c_t *out, int max) {
 }
 
 /*
- * `docker stats --no-stream` routinely takes well over a second to return
- * (it round-trips through the daemon). Running it inline from every SSE
- * tick (every 250ms) let subprocesses pile up faster than they could exit
- * whenever a tick outlasted 250ms or a connection lingered, ballooning
- * memory. A single background thread polls it in a tight loop (one call
- * at a time, ever) and every request just reads the cached result.
+ * Even parallelized, a full listing + concurrent per-container stats pass
+ * takes noticeably longer than the 250ms SSE tick (and blocks up to the
+ * per-request socket timeout if the daemon stalls), so it isn't safe to
+ * run inline from every SSE tick. A single background thread polls it in
+ * a loop (one pass at a time, ever) and every request just reads the
+ * cached result.
  */
 static docker_c_t g_docker_cache[MAX_DOCKER];
 static int g_docker_count = 0;
@@ -429,13 +723,14 @@ static void build_metrics_json(sbuf_t *s) {
 /* HTTP server                                                         */
 /* ------------------------------------------------------------------ */
 
-static void send_all(int fd, const char *data, size_t len) {
+static int send_all(int fd, const char *data, size_t len) {
     size_t sent = 0;
     while (sent < len) {
         ssize_t n = send(fd, data + sent, len - sent, MSG_NOSIGNAL);
-        if (n <= 0) return;
+        if (n <= 0) return -1;
         sent += (size_t)n;
     }
+    return 0;
 }
 
 static void send_404(int fd) {

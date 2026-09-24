@@ -37,7 +37,7 @@ Runs on `http://localhost:7777` with access to host /proc, /sys, and Docker daem
   - `/stream` — Server-Sent Events endpoint, yields metrics every 250ms (4x per second); each connection runs its own loop on its own thread
   - `/metrics` — Single JSON response of current metrics
   - `/` and other paths — serves files from `./static` (path-traversal guarded, `/` maps to `static/index.html`)
-- **Docker Integration**: Calls `docker stats --no-stream --format '{{json .}}'` via `popen()`, parses each JSON line with lightweight key lookup (not a full JSON parser — relies on Docker's own output being well-formed), sorts by CPU usage (top 25)
+- **Docker Integration**: Talks directly to the Docker daemon's HTTP API over its unix socket (`$ENV_DOCKER_SOCK`, default `/var/run/docker.sock`) — no `docker` CLI binary in the image. Lists containers via `GET /containers/json`, then fetches `GET /containers/<id>/stats?stream=false` per container; parses the JSON with lightweight, order-dependent key lookup (not a full JSON parser — relies on the Docker API's documented, stable field order), sorts by CPU usage (top 25)
 - **JSON output**: Hand-built via a growable string buffer (`sbuf_t`) with a small escaper for string values (container names, mem usage strings, hostname)
 
 ### Data Structure
@@ -78,10 +78,13 @@ Metrics are JSON objects with:
 ## Important Implementation Details
 
 1. **Docker monitoring**:
-   - Backend: Runs `popen("docker stats --no-stream --format '{{json .}}'")` synchronously inside the request's own thread (each connection already has its own pthread, so this doesn't block other clients)
-   - Extracts: container name (truncated to 20 chars, matching the old Python slice), CPU%, memory usage, memory%, via `json_get_string()` (a `strstr`-based lookup, not a general JSON parser)
+   - Backend: Connects to the Docker daemon's unix socket directly (`docker_http_get()` — a minimal hand-rolled HTTP/1.1 client: connects, sends a raw GET, reads until EOF via `Connection: close`, de-chunks if needed), polled from a dedicated background thread (`docker_stats_thread`), not inline per-request
+   - Lists container IDs from `GET /containers/json?all=false`, then for each one calls `GET /containers/<id>/stats?stream=false` (a single-shot snapshot that conveniently includes both `cpu_stats` and `precpu_stats`, so no separate warm-up sample is needed)
+   - CPU%/mem% computed the same way the `docker stats` CLI does internally (cpu delta / system delta * online cpus * 100; usage / limit * 100)
+   - Extracts fields via `json_get_number_bounded()` / `json_get_string()` (`strstr`-based lookups scoped to each JSON sub-object by the API's documented field order, not a general JSON parser)
+   - Container name: truncated to 20 chars (matching the old Python slice)
    - Returns top 25 sorted by CPU percent descending (`qsort` + `cmp_docker`)
-   - Gracefully returns empty array if Docker unavailable (no crash) — `popen` failures and parse failures are both swallowed
+   - Gracefully returns empty array if Docker unavailable (no crash) — socket-connect failures, non-200 responses, and parse failures are all swallowed
    - Frontend: Client-side sorting by CPU or memory via JavaScript event listeners on column headers
    - Sort direction toggled on repeated clicks (arrows: ▲=ascending, ▼=descending)
 
@@ -121,7 +124,7 @@ Metrics are JSON objects with:
 
 - **No database or state persistence**: All metrics are computed on-demand; no storage
 - **No authentication**: Assumes running on trusted network (localhost or internal)
-- **Docker environment variables**: `ENV_HOST_PROC` is read directly by `app.c` and prefixed onto `/proc` paths when running containerized; `ENV_HOST_SYS` is set for parity with the old Python version but currently unused (no `/sys` reads in the C backend)
+- **Docker environment variables**: `ENV_HOST_PROC` is read directly by `app.c` and prefixed onto `/proc` paths when running containerized; `ENV_HOST_SYS` is set for parity with the old Python version but currently unused (no `/sys` reads in the C backend); `ENV_DOCKER_SOCK` optionally overrides the Docker daemon socket path (default `/var/run/docker.sock`)
 - **Platform**: Linux only — the binary is compiled for and only runs on Linux
 - **SSE reconnection**: Frontend retries every 3 seconds on disconnect
 - **Update frequency**: Backend sends metrics every 250ms (4 times per second) for smooth animations

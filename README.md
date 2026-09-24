@@ -11,20 +11,19 @@ A real-time system metrics dashboard with a retro CRT aesthetic. Stream live CPU
 - **Retro Design**: Authentic CRT aesthetic with scanlines, vignette, and glowing text
 - **System Info**: Displays uptime and local date/time in header
 - **Responsive**: Works on desktop and mobile
-- **macOS Support**: Reads hardware temperatures (with graceful fallback on other platforms)
-- **Docker Ready**: Containerized with access to host metrics and Docker daemon
+- **Docker Ready**: Containerized with access to host metrics and the Docker daemon socket
 - **SSE Stream**: Server-Sent Events for real-time updates without polling
 
 ## Quick Start
 
-### Local (macOS/Linux)
+### Local (Linux)
 
 ```bash
-pip install -r requirements.txt
-python3 -m uvicorn app:app --reload --port 7777
+gcc -O2 -Wall -o machinemonitor app.c -lpthread
+./machinemonitor
 ```
 
-Open http://localhost:7777 in your browser.
+Open http://localhost:8000 in your browser (set `ENV_HOST_PROC` to point at an alternate procfs).
 
 ### Docker
 
@@ -36,13 +35,13 @@ Open http://localhost:7777. Runs on port 7777.
 
 ## Requirements
 
-- **Python 3.12+** (for local development)
-- **Dependencies**: FastAPI, uvicorn, psutil, sse-starlette
-- **macOS only**: pyobjc (for hardware temperature reading)
+- **Platform**: Linux only (reads `/proc` directly; the binary only runs on Linux)
+- **Build**: a C11 compiler and `libpthread` — no other dependencies
+- **Docker monitoring**: access to a Docker daemon socket (default `/var/run/docker.sock`); optional, fails gracefully if unavailable
 
 ## System Requirements
 
-- **Memory**: Minimal (~20 MB overhead)
+- **Memory**: Minimal (a few MB overhead)
 - **CPU**: Negligible impact
 - **Network**: None required (local monitoring only by default)
 
@@ -79,12 +78,13 @@ See `CLAUDE.md` for architecture details, implementation notes, and development 
 
 ```
 MachineMonitor/
-├── app.py              # FastAPI backend, metrics collection
+├── app.c                # C backend: HTTP server, metrics collection, Docker stats
 ├── static/
-│   └── index.html      # Dashboard UI (HTML/CSS/JS)
-├── Dockerfile          # Container image
-├── docker-compose.yml  # Container orchestration
-└── requirements.txt    # Python dependencies
+│   └── index.html       # Dashboard UI (HTML/CSS/JS)
+├── Dockerfile           # Container image (multi-stage Alpine build)
+├── docker-compose.yml   # Container orchestration
+├── install-service.sh   # Helper to install as a systemd service
+└── docker-top-containers.sh  # Helper script
 ```
 
 ## API
@@ -139,12 +139,19 @@ Server-Sent Events endpoint. Streams metrics every 250ms (4 times per second).
 data: {"hostname":"my-vps","ts":1712691234000,"docker":[...],...}
 ```
 
+## Environment Variables
+
+- `ENV_HOST_PROC` — prefixed onto `/proc` reads (used when running containerized against a mounted host procfs)
+- `ENV_HOST_SYS` — set for parity with the old Python version; currently unused (no `/sys` reads in the C backend)
+- `ENV_DOCKER_SOCK` — overrides the Docker daemon socket path (default `/var/run/docker.sock`)
+
 ## Design Notes
 
 - No authentication — assumes trusted network
 - No data persistence — metrics computed on-demand
 - Single-page application — no build step required
 - Canvas rendering for performant charts
+- Docker stats are fetched by talking directly to the Docker daemon's HTTP API over its unix socket — no `docker` CLI binary is bundled in the image
 
 ## License
 
