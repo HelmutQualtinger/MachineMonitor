@@ -206,7 +206,7 @@
     text-shadow: 0 2px 0 #000c, 0 -1px 0 #ffffff22;
   }
 
-  .logo span {
+  .logo #hostname {
     color: var(--text-dim);
     font-family: var(--mono);
     font-weight: 700;
@@ -702,7 +702,7 @@
 
 <header>
   <div class="logo">
-    MACHINE MONITOR
+    <span id="logo-title">MACHINE MONITOR</span>
     <span id="hostname">SYSTEM TELEMETRY / LIVE</span>
   </div>
   <div class="header-info">
@@ -932,8 +932,14 @@ const I18N = {
 };
 let lbl = I18N.default;
 
+// Cyrillic transliteration of the heading, shown for the U-Boot and Soviet
+// themes; Bugatti keeps the Latin "MACHINE MONITOR" wordmark.
+const LOGO_TITLE_CYRILLIC = 'МАШИН МОНИТОР';
+
 function applyStaticLabels() {
   document.title = lbl.title;
+  document.getElementById('logo-title').textContent =
+    theme === 'bugatti' ? I18N.default.title : LOGO_TITLE_CYRILLIC;
   document.documentElement.lang = lbl.lang;
   if (!hostnameReceived) document.getElementById('hostname').textContent = lbl.subtitle;
   document.getElementById('title-cpu').textContent = lbl.panelCpu;
