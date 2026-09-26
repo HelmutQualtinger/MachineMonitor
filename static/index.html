@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-theme="soviet">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MACHINE MONITOR</title>
+<title>МАШИН МОНИТОР</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&family=Russo+One&family=VT323&family=Bebas+Neue&family=Chakra+Petch:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -339,6 +339,56 @@
   .panel-cpu, .panel-mem, .panel-net {
     max-height: 400px;
   }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000000b0;
+  }
+
+  .modal-overlay.hidden { display: none; }
+
+  .modal-box {
+    width: min(360px, 86vw);
+    align-items: center;
+    text-align: center;
+    padding: 22px 24px 18px;
+    gap: 14px;
+  }
+
+  .modal-title {
+    font-family: var(--disp);
+    letter-spacing: .08em;
+    font-size: 1.1rem;
+    color: var(--amber);
+  }
+
+  .modal-text {
+    font-family: var(--mono);
+    color: var(--text);
+    font-size: .92rem;
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  .modal-btn {
+    font-family: var(--disp);
+    letter-spacing: .06em;
+    background: var(--bezel);
+    color: var(--green);
+    border: 2px solid var(--border);
+    border-radius: 3px;
+    padding: 8px 28px;
+    cursor: pointer;
+    text-shadow: 0 0 6px var(--green);
+  }
+
+  .modal-btn:hover { color: var(--text); }
+  .modal-btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
   .panel-docker, .panel-processes {
     max-height: 400px;
@@ -700,26 +750,36 @@
 </head>
 <body>
 
+<div id="anthemModal" class="modal-overlay">
+  <div class="modal-box panel" role="dialog" aria-modal="true" aria-labelledby="anthemModalTitle">
+    <div id="anthemModalTitle" class="modal-title">ВНИМАНИЕ</div>
+    <p class="modal-text">Нажмите «ОК», чтобы включить фоновую музыку.</p>
+    <button type="button" id="anthemModalOk" class="modal-btn">ОК</button>
+  </div>
+</div>
+
 <header>
   <div class="logo">
-    <span id="logo-title">MACHINE MONITOR</span>
-    <span id="hostname">SYSTEM TELEMETRY / LIVE</span>
+    <span id="logo-title">МАШИН МОНИТОР</span>
+    <span id="hostname">ТЕЛЕМЕТРИЯ СИСТЕМЫ / В ЭФИРЕ</span>
   </div>
   <div class="header-info">
-    <div class="header-item" id="uptime">UPTIME: --</div>
+    <div class="header-item" id="uptime">ВРЕМЯ РАБОТЫ: --</div>
     <div class="header-item" id="datetime">--:--:-- -- -- ----</div>
   </div>
   <div class="status">
     <div class="dot" id="dot"></div>
-    <span id="status-text">CONNECTING...</span>
+    <span id="status-text">ПОДКЛЮЧЕНИЕ...</span>
   </div>
   <div class="clock" id="clock">--:--:--</div>
   <div id="themeToggle" class="theme-toggle" role="group" aria-label="Theme">
-    <button type="button" class="theme-btn" data-theme="uboot" aria-pressed="true">U-BOOT</button>
+    <button type="button" class="theme-btn" data-theme="uboot" aria-pressed="false">U-BOOT</button>
     <button type="button" class="theme-btn" data-theme="bugatti" aria-pressed="false">BUGATTI</button>
-    <button type="button" class="theme-btn" data-theme="soviet" aria-pressed="false">СССР</button>
+    <button type="button" class="theme-btn" data-theme="soviet" aria-pressed="true">СССР</button>
   </div>
 </header>
+
+<audio id="anthem" src="knaben-chor.mp" loop preload="none"></audio>
 
 <main>
   <!-- CPU + Cores + History -->
@@ -1250,8 +1310,8 @@ function drawNet() {
 }
 
 // ─── Theme selector (U-Boot / Bugatti / Soviet) ────────────────────────────────
-let theme = 'uboot';
-try { const t = localStorage.getItem('mm-theme'); if (t === 'bugatti' || t === 'soviet') theme = t; } catch {}
+let theme = 'soviet';
+try { const t = localStorage.getItem('mm-theme'); if (t === 'bugatti' || t === 'soviet' || t === 'uboot') theme = t; } catch {}
 
 const themeButtons = document.querySelectorAll('.theme-btn');
 
@@ -1267,7 +1327,23 @@ function applyTheme() {
   chartMem.draw(memHistory);
   drawNet();
   if (lastData) renderData(lastData);
+  updateAnthem();
 }
+
+// ─── Background anthem loop (plays under any theme) ────────────────────────
+// Browsers block un-gestured autoplay of audio with sound, so playback starts
+// from the OK click on the modal dialog below, which counts as a user
+// gesture; subsequent theme switches (also clicks) just keep it going.
+const anthem = document.getElementById('anthem');
+function updateAnthem() {
+  anthem.play().catch(() => {});
+}
+
+const anthemModal = document.getElementById('anthemModal');
+document.getElementById('anthemModalOk').addEventListener('click', () => {
+  anthemModal.classList.add('hidden');
+  updateAnthem();
+});
 
 themeButtons.forEach(btn => {
   btn.addEventListener('click', () => {

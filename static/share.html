@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>МАШИН МОНИТОР</title>
+
+<!-- Public, unauthenticated preview page: no live telemetry, just branding for
+     link previews (Facebook/Twitter/Slack/Discord crawlers can't pass the
+     Basic-Auth in front of the real dashboard — see nginx proxy_host/12.conf). -->
+<meta name="description" content="Live system telemetry dashboard — CPU, memory, network, processes & Docker, updated 4x per second." />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="МАШИН МОНИТОР" />
+<meta property="og:title" content="МАШИН МОНИТОР" />
+<meta property="og:description" content="Live system telemetry dashboard — CPU, memory, network, processes & Docker, updated 4x per second." />
+<meta property="og:url" content="https://monitor.bekerh.ddns.net/share.html" />
+<meta property="og:image" content="https://monitor.bekerh.ddns.net/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="МАШИН МОНИТОР" />
+<meta name="twitter:description" content="Live system telemetry dashboard — CPU, memory, network, processes & Docker, updated 4x per second." />
+<meta name="twitter:image" content="https://monitor.bekerh.ddns.net/og-image.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&family=Russo+One&family=VT323&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #170a09; --paint: #6e1414; --paint2: #431012; --border: #0c0403; --bezel: #0a0504;
+    --green: #7dffa0; --amber: #ffcc33; --red: #ff4433;
+    --text: #f0e2c0; --text-dim: #c79a86;
+    --mono: 'Play', ui-monospace, sans-serif;
+    --disp: 'Russo One', 'Arial Black', Impact, sans-serif;
+    --lcd: 'VT323', ui-monospace, monospace;
+    --grain: repeating-linear-gradient(45deg, #5c1010 0 3px, #3d0c0c 3px 6px),
+             repeating-linear-gradient(-45deg, #5c101099 0 3px, transparent 3px 6px);
+    --rv: radial-gradient(circle at 38% 34%, #f5dfa0 0, #c9a227 30%, #6b4f10 62%, #241a05 68%, transparent 72%);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    background: var(--bg);
+    font-family: var(--mono);
+    color: var(--text);
+  }
+  .plate {
+    position: relative;
+    width: 100%; max-width: 640px;
+    padding: 40px 36px;
+    text-align: center;
+    background:
+      var(--rv) left 10px top 10px/16px 16px no-repeat,
+      var(--rv) right 10px top 10px/16px 16px no-repeat,
+      var(--rv) left 10px bottom 10px/16px 16px no-repeat,
+      var(--rv) right 10px bottom 10px/16px 16px no-repeat,
+      var(--grain),
+      linear-gradient(160deg, #8a1c1c 0%, #6e1414 42%, #431012 100%);
+    border: 3px solid var(--border);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 #ffffff26, 0 10px 30px #000a;
+  }
+  .star { color: var(--amber); font-size: 2rem; text-shadow: 0 0 12px rgba(255,204,51,0.7); }
+  h1 { font-family: var(--disp); font-size: 2rem; letter-spacing: 0.08em; margin: 10px 0 6px;
+       text-shadow: 0 2px 0 #000c, 0 -1px 0 #ffffff22; }
+  .sub { font-weight: 700; color: var(--text-dim); letter-spacing: 0.2em; font-size: 0.8rem; margin-bottom: 28px; }
+  p { color: var(--text-dim); line-height: 1.5; margin: 0 auto 28px; max-width: 46ch; }
+  a.cta {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--lcd); font-size: 1.25rem; color: var(--green);
+    text-shadow: 0 0 8px rgba(125,255,160,0.55);
+    background: var(--bezel); border: 2px solid #0b0403; border-radius: 4px;
+    box-shadow: inset 0 2px 6px #000, 0 0 0 2px #6b4f10;
+    padding: 10px 22px; text-decoration: none;
+  }
+  a.cta::before {
+    content: ''; width: 10px; height: 10px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #d8ffe2, #2fd06a 45%, #0b5a26);
+    box-shadow: 0 0 7px #34d399;
+  }
+  .note { margin-top: 22px; font-size: 0.75rem; color: var(--text-dim); letter-spacing: 0.05em; }
+</style>
+</head>
+<body>
+  <div class="plate">
+    <div class="star">&#9733;</div>
+    <h1>МАШИН МОНИТОР</h1>
+    <div class="sub">ТЕЛЕМЕТРИЯ СИСТЕМЫ</div>
+    <p>Live CPU, memory, network, process &amp; Docker telemetry, updated four times a second, styled as a 1970s control room.</p>
+    <a class="cta" href="https://monitor.bekerh.ddns.net/">monitor.bekerh.ddns.net</a>
+    <div class="note">Login required to view the live dashboard.</div>
+  </div>
+</body>
+</html>
